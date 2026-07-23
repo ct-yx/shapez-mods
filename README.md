@@ -77,6 +77,18 @@ Benchmark 页面默认收起，点击 `PRESSURE Benchmark` 标题即可展开或
 
 机器压力指数会根据场上机器数量、组件类型、平均倍率和 Tick 耗时进行综合估算，用于比较不同工厂布局的压力，不代表硬件功耗测量值。
 
+#### 报告示例
+
+仓库中的 `reports/` 目录包含一次实际压力测试的完整导出结果：
+
+- [网页报告](reports/factory-stress-lab-sample.html)
+- [文本报告](reports/factory-stress-lab-sample.txt)
+- [PNG 报告原图](reports/factory-stress-lab-sample.png)
+
+示例 PNG 使用 2560×1640 分辨率，展示了平均倍率、平均帧率、目标保持率、稳定性、平均 Tick、实体数量、综合分数、自适应曲线和机器压力排行。
+
+![Factory Stress Lab 示例报告](reports/factory-stress-lab-sample.png)
+
 ### 4-way Balancer 与 8-way Balancer
 
 - `4-way-balancer.js` 提供 4 向平衡器。

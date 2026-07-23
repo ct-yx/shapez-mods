@@ -93,6 +93,19 @@ Benchmark 页面默认收起，点击 `PRESSURE Benchmark` 标题即可展开或
 
 ![Factory Stress Lab 示例报告](reports/factory-stress-lab-sample.png)
 
+## 项目开发统计
+
+以下是本项目在开发阶段的 token 使用统计截图，共计 4 个相关对话、`106,207,029` tokens：
+
+![项目 token 使用统计](reports/project-token-usage.png)
+
+统计组成：
+
+- 输入：`105,455,118`
+- 输出：`751,911`
+- 其中缓存输入：`79,750,912`
+- 推理输出：`364,875`
+
 ### 4-way Balancer 与 8-way Balancer
 
 - `4-way-balancer.js` 提供 4 向平衡器。

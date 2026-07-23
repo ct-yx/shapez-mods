@@ -1,7 +1,7 @@
 // @ts-nocheck
 const METADATA = {
     website: "https://github.com/ct-yx/shapez-mods",
-    author: "Asynic",
+    author: "ct-yx & Codex",
     name: "Factory Stress Lab",
     version: "2.4.0",
     id: "factory-stress-lab",

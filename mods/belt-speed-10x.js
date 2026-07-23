@@ -1,7 +1,7 @@
 // @ts-nocheck
 const METADATA = {
     website: "https://github.com/ct-yx/shapez-mods",
-    author: "Asynic",
+    author: "ct-yx & Codex",
     name: "Belt Speed ×10",
     version: "1.0.0",
     id: "belt-speed-x10",

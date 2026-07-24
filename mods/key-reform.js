@@ -3,7 +3,7 @@ const METADATA = {
     website: "https://github.com/ct-yx/shapez-mods",
     author: "ct-yx & Codex",
     name: "Key Reform",
-    version: "1.1.3",
+    version: "1.1.4",
     id: "key-reform-ctyx",
     description: "Adds configurable T+number and T/R mouse-wheel shortcuts for every building variant.",
     minimumGameVersion: ">=1.5.0",
@@ -26,7 +26,10 @@ const METADATA = {
 const KEY_T = "T".charCodeAt(0);
 const KEY_R = "R".charCodeAt(0);
 const FIRST_DIGIT = "0".charCodeAt(0);
-const WHEEL_STEP_INTERVAL_MS = 180;
+// Trackpads and high-resolution wheels emit one user gesture as a stream of
+// events. Only the leading event should change a variant/rotation; further
+// events remain part of the same gesture until scrolling has gone quiet.
+const WHEEL_GESTURE_IDLE_MS = 260;
 const AUTO_VARIANT = "__auto__";
 const TARGET_SEPARATOR = "::";
 const DIGITS = Array.from({ length: 10 }, (_, digit) => digit);
@@ -254,7 +257,8 @@ class Mod extends shapez.Mod {
         root.__keyReformKeyState_113 = {
             t: false,
             r: false,
-            lastWheelAt: -Infinity,
+            lastWheelEventAt: -Infinity,
+            lastWheelDirection: 0,
         };
 
         const inputReceiver = root.gameState && root.gameState.inputReciever;
@@ -338,7 +342,10 @@ class Mod extends shapez.Mod {
         if (!state) return;
         if (keyCode === KEY_T) state.t = isDown;
         if (keyCode === KEY_R) state.r = isDown;
-        if (!state.t && !state.r) state.lastWheelAt = -Infinity;
+        if (!state.t && !state.r) {
+            state.lastWheelEventAt = -Infinity;
+            state.lastWheelDirection = 0;
+        }
     }
 
     clearHeldKeys(root) {
@@ -346,7 +353,8 @@ class Mod extends shapez.Mod {
         if (!state) return;
         state.t = false;
         state.r = false;
-        state.lastWheelAt = -Infinity;
+        state.lastWheelEventAt = -Infinity;
+        state.lastWheelDirection = 0;
     }
 
     isKeyDown(root, keyCode) {
@@ -457,11 +465,20 @@ class Mod extends shapez.Mod {
         if (!wheelDelta) return;
         const state = root.__keyReformKeyState_113;
         const now = this.getNow();
-        if (state && now - state.lastWheelAt < WHEEL_STEP_INTERVAL_MS) return;
+        const direction = wheelDelta < 0 ? 1 : -1;
+        if (state) {
+            const isSameGesture = state.lastWheelDirection === direction
+                && now - state.lastWheelEventAt < WHEEL_GESTURE_IDLE_MS;
+            // Always refresh this timestamp, including ignored events. This
+            // prevents a long inertial/trackpad stream from becoming a second
+            // step merely because it outlasted a fixed success-only throttle.
+            state.lastWheelEventAt = now;
+            state.lastWheelDirection = direction;
+            if (isSameGesture) return;
+        }
         const placer = this.getPlacer(root);
         if (!placer) return;
         const variants = this.getAvailableVariants(placer);
-        const direction = wheelDelta < 0 ? 1 : -1;
         if (holdingT) {
             // This is intentionally generic: every building's own available
             // variant list is used, including variants added by other mods.
@@ -473,7 +490,6 @@ class Mod extends shapez.Mod {
         } else if (holdingR) {
             this.setRotation(placer, (placer.currentBaseRotation + direction * 90 + 360) % 360);
         }
-        if (state) state.lastWheelAt = now;
     }
 
     getWheelDelta(event) {

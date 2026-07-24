@@ -3,7 +3,7 @@ const METADATA = {
     website: "https://github.com/ct-yx/shapez-mods",
     author: "ct-yx & Codex",
     name: "Key Reform",
-    version: "1.1.5",
+    version: "1.1.6",
     id: "key-reform-ctyx",
     description: "Adds configurable T+number and T/R mouse-wheel shortcuts for every building variant.",
     minimumGameVersion: ">=1.5.0",
@@ -33,7 +33,10 @@ const FIRST_DIGIT = "0".charCodeAt(0);
 const WHEEL_DUPLICATE_WINDOW_MS = 70;
 const WHEEL_STREAM_RESET_MS = 240;
 const WHEEL_LARGE_DELTA_MIN = 50;
-const WHEEL_STEP_UNITS = 100;
+const WHEEL_LARGE_DETENT_UNITS = 100;
+// Lower threshold for high-resolution/trackpad events so small scrolling
+// responds sooner without changing the one-detent behavior of normal wheels.
+const WHEEL_SMALL_STEP_UNITS = 50;
 const AUTO_VARIANT = "__auto__";
 const TARGET_SEPARATOR = "::";
 const DIGITS = Array.from({ length: 10 }, (_, digit) => digit);
@@ -513,10 +516,10 @@ class Mod extends shapez.Mod {
         let steps = 0;
         if (state && isLarge) {
             // Large deltas represent one or more physical detents directly.
-            steps = Math.max(1, Math.round(magnitude / WHEEL_STEP_UNITS));
+            steps = Math.max(1, Math.round(magnitude / WHEEL_LARGE_DETENT_UNITS));
             state.wheelAccumulator = 0;
         } else if (state) {
-            state.wheelAccumulator += magnitude / WHEEL_STEP_UNITS;
+            state.wheelAccumulator += magnitude / WHEEL_SMALL_STEP_UNITS;
             steps = Math.floor(state.wheelAccumulator);
             state.wheelAccumulator -= steps;
         } else {

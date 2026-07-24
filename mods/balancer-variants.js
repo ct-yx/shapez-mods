@@ -3,7 +3,7 @@ const METADATA = {
     website: "https://github.com/ct-yx/shapez-mods",
     author: "ct-yx & Codex",
     name: "Balancer Variants",
-    version: "1.0.3",
+    version: "1.0.4",
     id: "balancer-variants-ctyx",
     description: "Adds 4-way, 5-way, 8-way, 10-way and 16-way balancers to the vanilla balancer variants.",
     minimumGameVersion: ">=1.5.0",
@@ -37,6 +37,34 @@ const EMPTY_VARIANT_PREVIEW = {
         return "";
     },
 };
+
+function makePlainVariantCardOneTile(card, label) {
+    // Vanilla hides labels in the variant strip and lets iconWrap determine
+    // every card's dimensions. Once the image is deliberately removed, set
+    // both explicitly so 4x/5x/8x/10x/16x remain a single square tile rather
+    // than collapsing to the card's 3px horizontal padding.
+    if (card && card.style) {
+        card.style.width = "calc(25px * var(--ui-scale))";
+        card.style.minWidth = "calc(25px * var(--ui-scale))";
+        card.style.height = "calc(25px * var(--ui-scale))";
+        card.style.minHeight = "calc(25px * var(--ui-scale))";
+        card.style.display = "inline-flex";
+        card.style.alignItems = "center";
+        card.style.justifyContent = "center";
+        card.style.gap = "0";
+    }
+    if (label && label.style) {
+        label.style.display = "flex";
+        label.style.width = "100%";
+        label.style.height = "100%";
+        label.style.alignItems = "center";
+        label.style.justifyContent = "center";
+        label.style.fontSize = "calc(8px * var(--ui-scale))";
+        label.style.lineHeight = "1";
+        label.style.fontWeight = "700";
+        label.style.whiteSpace = "nowrap";
+    }
+}
 
 function registerProcessorType(config) {
     const processorType = config.id;
@@ -170,6 +198,7 @@ function replaceVariantCardsWithLabels(placer) {
             // data-tile-w/data-tile-h layout reservation for 4/5/8/... lanes.
             icon.parentNode.removeChild(icon);
         }
+        makePlainVariantCardOneTile(card, label);
         if (card.classList && card.classList.add) {
             card.classList.add("shapez-mod-plain-variant");
         }

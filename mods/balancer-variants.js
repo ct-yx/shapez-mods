@@ -15,7 +15,19 @@ const VARIANTS = [4, 5, 8, 10, 16].map(ways => ({
     variant: "balancer_" + ways + "way",
     name: ways + "-way balancer",
     nameZh: ways + "-way 平衡器",
+    displayName: ways + "x",
 }));
+
+const VARIANT_BY_ID = new Map(VARIANTS.map(config => [config.variant, config]));
+
+// The vanilla variant strip asks MetaBuilding for a Sprite and then injects
+// its HTML into the card. Returning this tiny sprite-like object keeps the
+// actual building texture intact while leaving the strip text-only.
+const EMPTY_VARIANT_PREVIEW = {
+    getAsHTML() {
+        return "";
+    },
+};
 
 function registerProcessorType(config) {
     const processorType = config.id;
@@ -91,6 +103,43 @@ function updateWideBalancer(entity, config) {
     return true;
 }
 
+function replaceVariantCardsWithLabels(placer) {
+    const meta = placer && placer.currentMetaBuilding && placer.currentMetaBuilding.get();
+    const element = placer && placer.variantsElement;
+    if (!meta || !element || !element.children || typeof meta.getAvailableVariants !== "function") {
+        return;
+    }
+
+    let variants;
+    try {
+        variants = meta.getAvailableVariants(placer.root) || [];
+    } catch (error) {
+        return;
+    }
+
+    for (let index = 0; index < variants.length; ++index) {
+        const config = VARIANT_BY_ID.get(variants[index]);
+        if (!config) continue;
+
+        const card = element.children[index];
+        if (!card) continue;
+        const label = typeof card.querySelector === "function"
+            ? card.querySelector(".label")
+            : null;
+        const icon = typeof card.querySelector === "function"
+            ? card.querySelector(".iconWrap")
+            : null;
+        if (label) label.textContent = config.displayName;
+        if (icon) {
+            icon.innerHTML = "";
+            icon.style.display = "none";
+        }
+        if (card.classList && card.classList.add) {
+            card.classList.add("shapez-mod-plain-variant");
+        }
+    }
+}
+
 class Mod extends shapez.Mod {
     init() {
         for (const config of VARIANTS) registerProcessorType(config);
@@ -122,8 +171,12 @@ class Mod extends shapez.Mod {
         // each custom width. No toolbar entry is added: T cycles these variants
         // exactly where the vanilla balancer's variants are shown.
         this.modInterface.extendClass(metaBalancer, ({ $old }) => ({
+            getPreviewSprite(rotationVariant, variant) {
+                if (VARIANT_BY_ID.has(variant)) return EMPTY_VARIANT_PREVIEW;
+                return $old.getPreviewSprite.call(this, rotationVariant, variant);
+            },
             updateVariants(entity, rotationVariant, variant) {
-                const config = VARIANTS.find(item => item.variant === variant);
+                const config = VARIANT_BY_ID.get(variant);
                 if (config) {
                     updateWideBalancer(entity, config);
                     return;
@@ -131,6 +184,19 @@ class Mod extends shapez.Mod {
                 return $old.updateVariants.call(this, entity, rotationVariant, variant);
             },
         }));
+
+        // The vanilla placer renders every variant as a large image card.
+        // Keep the image for the actual building, but make this selector a
+        // compact text-only list: 4x, 5x, 8x, 10x and 16x.
+        if (shapez.HUDBuildingPlacer) {
+            this.modInterface.extendClass(shapez.HUDBuildingPlacer, ({ $old }) => ({
+                rerenderVariants(...args) {
+                    const result = $old.rerenderVariants.apply(this, args);
+                    replaceVariantCardsWithLabels(this);
+                    return result;
+                },
+            }));
+        }
     }
 }
 

@@ -3,7 +3,7 @@ const METADATA = {
     website: "https://github.com/ct-yx/shapez-mods",
     author: "ct-yx & Codex",
     name: "Balancer Variants",
-    version: "1.0.2",
+    version: "1.0.3",
     id: "balancer-variants-ctyx",
     description: "Adds 4-way, 5-way, 8-way, 10-way and 16-way balancers to the vanilla balancer variants.",
     minimumGameVersion: ">=1.5.0",
@@ -132,9 +132,18 @@ function updateWideBalancer(entity, config) {
 function replaceVariantCardsWithLabels(placer) {
     const meta = placer && placer.currentMetaBuilding && placer.currentMetaBuilding.get();
     const element = placer && placer.variantsElement;
-    if (!meta || !element || !element.children || typeof meta.getAvailableVariants !== "function") {
+    if (!meta || !element || typeof element.querySelector !== "function"
+        || typeof meta.getAvailableVariants !== "function") {
         return;
     }
+
+    // HUDBuildingPlacer keeps an explanatory node before the actual cards:
+    //   #ingame_HUD_PlacerVariants > .explanation + .variants > .variant
+    // Indexing variantsElement.children therefore points at the wrong DOM
+    // level, leaving the generated iconWrap (and its N-tile blank box) alive.
+    const variantsContainer = element.querySelector(".variants");
+    const cards = variantsContainer && variantsContainer.children;
+    if (!cards) return;
 
     let variants;
     try {
@@ -147,7 +156,7 @@ function replaceVariantCardsWithLabels(placer) {
         const config = VARIANT_BY_ID.get(variants[index]);
         if (!config) continue;
 
-        const card = element.children[index];
+        const card = cards[index];
         if (!card) continue;
         const label = typeof card.querySelector === "function"
             ? card.querySelector(".label")
@@ -156,9 +165,10 @@ function replaceVariantCardsWithLabels(placer) {
             ? card.querySelector(".iconWrap")
             : null;
         if (label) label.textContent = config.displayName;
-        if (icon) {
-            icon.innerHTML = "";
-            icon.style.display = "none";
+        if (icon && icon.parentNode && typeof icon.parentNode.removeChild === "function") {
+            // Removing, rather than merely emptying, iconWrap also removes its
+            // data-tile-w/data-tile-h layout reservation for 4/5/8/... lanes.
+            icon.parentNode.removeChild(icon);
         }
         if (card.classList && card.classList.add) {
             card.classList.add("shapez-mod-plain-variant");

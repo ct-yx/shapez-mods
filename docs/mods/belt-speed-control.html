@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="让传送带、地下传送带、原版二路平衡器和读取器使用统一的高吞吐倍率。">
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+    <title>Belt Speed Control · shapez.io Mods</title>
+    <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+    <header class="site-header"><nav class="nav"><a class="brand" href="../index.html"><span class="brand-mark">◇</span>shapez.io Mods</a><div class="nav-links"><a href="../index.html#mods">全部 Mod</a><a href="https://github.com/ct-yx/shapez-mods/blob/main/mods/belt_speed_10x.js">源码 ↗</a></div></nav></header>
+    <main class="shell">
+        <section class="page-hero"><div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><span>物流</span></div><span class="tag">物流</span><h1>Belt Speed Control</h1><p class="lead">让传送带、地下传送带、原版二路平衡器和读取器使用统一的高吞吐倍率。</p><div class="meta-row"><span class="meta">版本 1.4.0</span><span class="meta">文件 <code>belt_speed_10x.js</code></span><span class="meta">shapez.io 1.x</span></div></section>
+        <section class="page-layout"><article class="prose"><h2>用途</h2><p>用于快速验证大型物流网络。它保留游戏原有的等级与升级关系，只是在运行期按配置放大吞吐。默认倍率为 10×，也可以随时回到 1× 原版速度。</p><h2>核心功能</h2><ul><li>每级传送带速度可设置为 1–50×，关闭开关或设为 1× 即恢复原版行为。</li><li>一级与二级地下传送带距离可分别设置为原版的 1–10×：最高 50 格与 90 格。</li><li>原版二路平衡器的处理速度同步增加，避免它成为高速带网络中的瓶颈。</li><li>传送带读取器改为即时透传，并解除原版读取覆盖层的 47.8 items/s 显示上限。</li></ul><h2>使用方法</h2><ul><li>启用 Structured Mod Settings UI 后，进入「游戏模组（MODS）→ 传送带速度控制」。</li><li>先用 5× 或 10× 验证布局，再逐步提高倍率观察吞吐和逻辑负载。</li><li>改变地下传送带距离后，Mod 会刷新既有隧道连接缓存。</li></ul><section><h2>实机截图</h2><div class="gallery"><figure class="full contain"><img src="../assets/screenshots/belt-speed-settings.png" alt="传送带速度控制设置"><figcaption>速度倍率与两档地下传送带距离均可单独配置。</figcaption></figure></div></section><h2>兼容性与注意事项</h2><div class="notice">该 Mod 调整的是物流吞吐；Factory Stress Lab 调整的是整体模拟倍率，两者可以组合用于压测。</div></article><aside class="aside"><h3>获取方式</h3><p>下载整合包后，只需将本 Mod 对应的 JS 文件复制到游戏 Mod 目录。</p><a class="button primary" href="../downloads/shapez-mods-modpack.zip">下载 ZIP</a><a class="button" href="https://github.com/ct-yx/shapez-mods/blob/main/mods/belt_speed_10x.js">查看源码 ↗</a><a class="button" href="https://ct-yx.github.io/shapez-mods/">返回展示首页</a></aside></section>
+    </main>
+    <footer class="site-footer"><div class="shell"><span>shapez.io Mods Collection</span><a href="https://github.com/ct-yx/shapez-mods">GitHub Repository ↗</a></div></footer>
+</body>
+</html>

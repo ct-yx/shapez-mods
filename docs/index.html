@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="shapez.io 一代中文 Mod 整合包：物流、建造、设置、地图预览与工厂性能测试。">
+    <title>shapez.io Mods Collection</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header class="site-header">
+        <nav class="nav">
+            <a class="brand" href="index.html"><span class="brand-mark">◇</span>shapez.io Mods</a>
+            <div class="nav-links"><a href="#mods">Mod</a><a href="#screenshots">截图</a><a href="#install">安装</a><a href="https://github.com/ct-yx/shapez-mods">GitHub ↗</a></div>
+        </nav>
+    </header>
+    <main>
+        <div class="shell">
+            <section class="hero">
+                <p class="eyebrow">Community collection · Shapez 1.x</p>
+                <h1>让工厂的<span class="accent">物流、建造与性能测试</span>更顺手。</h1>
+                <p class="lead">一套面向 shapez.io 一代的中文 Mod 整合：高吞吐物流、多向平衡器、原生设置页、快捷建造、地图预览与自适应压力测试。</p>
+                <div class="actions"><a class="button primary" href="downloads/shapez-mods-modpack.zip">下载整合包 · ZIP</a><a class="button" href="https://github.com/ct-yx/shapez-mods">查看源码 ↗</a></div>
+            </section>
+            <div class="stats" aria-label="项目概览"><div class="stat"><strong>9</strong><span>可独立启用的 Mod</span></div><div class="stat"><strong>1.5.0+</strong><span>维护 Mod 的最低游戏版本</span></div><div class="stat"><strong>0</strong><span>构建依赖，复制 JS 即可使用</span></div></div>
+        </div>
+
+        <section id="mods"><div class="shell">
+            <div class="section-heading"><h2>按需组合，而不是一键强绑。</h2><p>每个 Mod 都是单文件，可独立启用。带设置项的 Mod 会自动接入统一的“游戏模组（MODS）”页面。</p></div>
+            <div class="card-grid">
+                <a class="mod-card" href="mods/structured-mod-settings.html"><span class="tag">基础设施</span><h3>Structured Mod Settings UI</h3><p>在游戏原生设置中新增 MODS 分类，统一保存其他 Mod 的结构化配置。</p><span class="card-link">查看介绍 →</span></a>
+                <a class="mod-card" href="mods/belt-speed-control.html"><span class="tag">物流</span><h3>Belt Speed Control</h3><p>传送带 1–50× 调速，地下传送带距离独立设置，并同步原版平衡器与读取器。</p><span class="card-link">查看介绍 →</span></a>
+                <a class="mod-card" href="mods/balancer-variants.html"><span class="tag">物流</span><h3>Balancer Variants</h3><p>为原版平衡器加入 4 / 5 / 8 / 10 / 16 路变形体，不增加工具栏格子。</p><span class="card-link">查看介绍 →</span></a>
+                <a class="mod-card" href="mods/key-reform.html"><span class="tag purple">建造</span><h3>Key Reform</h3><p>T + 数字键、T/R + 滚轮，让变形体和朝向切换变成连续操作。</p><span class="card-link">查看介绍 →</span></a>
+                <a class="mod-card" href="mods/zoomout-before-mapmode.html"><span class="tag purple">视图</span><h3>Zoom out before Mapmode</h3><p>扩大进入地图总览前的缩放范围，并在远视角简化传送带渲染。</p><span class="card-link">查看介绍 →</span></a>
+                <a class="mod-card" href="mods/factory-stress-lab.html"><span class="tag yellow">性能</span><h3>Factory Stress Lab</h3><p>无上限模拟倍率、40 FPS 自适应 Benchmark、性能曲线和多格式报告。</p><span class="card-link">查看介绍 →</span></a>
+                <a class="mod-card" href="mods/auto-tunnels.html"><span class="tag">建造</span><h3>Auto Tunnels</h3><p>方向锁定铺传送带时，自动尝试用地下传送带跨越既有物流。</p><span class="card-link">查看介绍 →</span></a>
+                <a class="mod-card" href="mods/chainable-extractors.html"><span class="tag">建造</span><h3>Chainable Extractors</h3><p>拖动建造链式采矿机时，连续放置并根据拖动方向调整朝向。</p><span class="card-link">查看介绍 →</span></a>
+                <a class="mod-card" href="mods/sandbox.html"><span class="tag yellow">测试</span><h3>Sandbox</h3><p>全部科技奖励解锁、蓝图成本为零，适合布局验证和性能压测。</p><span class="card-link">查看介绍 →</span></a>
+            </div>
+        </div></section>
+
+        <section><div class="shell feature-strip">
+            <div class="wide-panel"><span class="tag purple">推荐组合</span><h2>从建厂到压测的一条工作流</h2><ul class="check-list"><li><strong>日常建造：</strong>Balancer Variants + Key Reform</li><li><strong>高吞吐验证：</strong>Belt Speed Control + Auto Tunnels</li><li><strong>远景规划：</strong>Structured Settings + Zoom out before Mapmode</li><li><strong>性能对比：</strong>Factory Stress Lab + Sandbox</li></ul></div>
+            <div class="info-card"><span class="tag yellow">保存兼容性</span><h3>运行期增强</h3><p>主要维护 Mod 标记为不影响存档：它们修改的是运行时行为、设置界面或绘制方式。Sandbox 会改变正常进度的解锁状态，推荐用于独立测试档。</p></div>
+        </div></section>
+
+        <section id="screenshots"><div class="shell">
+            <div class="section-heading"><h2>游戏内实机截图</h2><p>展示统一设置页、扩展平衡器、远距离地图预览与 Factory Stress Lab 的报告输出。</p></div>
+            <div class="gallery">
+                <figure class="large contain"><img src="assets/screenshots/structured-settings-overview.png" alt="游戏模组设置总览"><figcaption>统一的「游戏模组（MODS）」设置分类</figcaption></figure>
+                <figure class="small contain"><img src="assets/screenshots/belt-speed-settings.png" alt="传送带速度控制设置"><figcaption>传送带、地下传送带与平衡器的吞吐配置</figcaption></figure>
+                <figure class="small contain"><img src="assets/screenshots/balancer-variant-selector.png" alt="平衡器变形体选择"><figcaption>原版平衡器的 4x–16x 变形体选择条</figcaption></figure>
+                <figure class="large contain"><img src="assets/screenshots/factory-stress-lab-report.png" alt="工厂压力实验室报告"><figcaption>Factory Stress Lab 导出的压力测试报告</figcaption></figure>
+                <figure class="full"><img src="assets/screenshots/zoomout-map-overview.png" alt="远距离地图预览"><figcaption>地图总览缩放：远距离查看大规模物流布局</figcaption></figure>
+            </div>
+        </div></section>
+
+        <section id="install"><div class="shell">
+            <div class="section-heading"><h2>安装只需要三步。</h2><p>整合包内的每个 JS 文件均可以单独复制到游戏的 Mod 目录中。</p></div>
+            <div class="install"><div class="step"><strong>01 · 下载</strong><p>下载 ZIP 整合包，解压后进入其中的 <code>mods/</code> 目录。</p></div><div class="step"><strong>02 · 复制</strong><p>将需要的 <code>.js</code> 文件复制到 shapez.io 的 Mod 目录。macOS 常用路径为 <code>~/Library/Preferences/shapez.io/mods/</code>。</p></div><div class="step"><strong>03 · 启用</strong><p>重启游戏后在 Mod 管理界面启用。需要调参数时，打开「设置 → 游戏模组（MODS）」。</p></div></div>
+        </div></section>
+    </main>
+    <footer class="site-footer"><div class="shell"><span>shapez.io Mods Collection · maintained by ct-yx &amp; contributors</span><a href="https://github.com/ct-yx/shapez-mods">GitHub Repository ↗</a></div></footer>
+</body>
+</html>

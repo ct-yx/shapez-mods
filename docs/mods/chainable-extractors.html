@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="拖动铺设链式采矿机时，连续放置并自动调整链路朝向。">
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+    <title>Chainable Extractors · shapez.io Mods</title>
+    <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+    <header class="site-header"><nav class="nav"><a class="brand" href="../index.html"><span class="brand-mark">◇</span>shapez.io Mods</a><div class="nav-links"><a href="../index.html#mods">全部 Mod</a><a href="https://github.com/ct-yx/shapez-mods/blob/main/mods/extractor_chain.js">源码 ↗</a></div></nav></header>
+    <main class="shell">
+        <section class="page-hero"><div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><span>建造</span></div><span class="tag">建造</span><h1>Chainable Extractors</h1><p class="lead">拖动铺设链式采矿机时，连续放置并自动调整链路朝向。</p><div class="meta-row"><span class="meta">版本 1.0.0</span><span class="meta">文件 <code>extractor_chain.js</code></span><span class="meta">shapez.io 1.x</span></div></section>
+        <section class="page-layout"><article class="prose"><h2>用途</h2><p>这个轻量 Mod 专注于链式采矿机的批量摆放。选中 miner 的 chainable 变形体后拖动鼠标，Mod 会沿拖动路径逐格放置，并根据水平方向和垂直方向更新每一段朝向。</p><h2>核心功能</h2><ul><li>仅在当前建筑是 miner 且变形体为 chainable 时接管鼠标移动。</li><li>沿拖动轨迹逐格连续放置，适合批量覆盖资源块。</li><li>使用反向放置修饰键时，按相反方向计算旋转。</li><li>地图总览激活、方向锁定或镜头正在移动时回退到原版处理。</li></ul><h2>使用方法</h2><ul><li>选择采矿机的链式变形体。</li><li>按住鼠标并横向、纵向或斜向拖动，连续铺设链条。</li><li>需要反向链路时配合游戏原有的反向放置修饰键。</li></ul><h2>兼容性与注意事项</h2><div class="notice">它直接修改建造器的鼠标移动处理逻辑；若其他 Mod 也重写同一方法，应优先确认组合行为。</div></article><aside class="aside"><h3>获取方式</h3><p>下载整合包后，只需将本 Mod 对应的 JS 文件复制到游戏 Mod 目录。</p><a class="button primary" href="../downloads/shapez-mods-modpack.zip">下载 ZIP</a><a class="button" href="https://github.com/ct-yx/shapez-mods/blob/main/mods/extractor_chain.js">查看源码 ↗</a><a class="button" href="https://ct-yx.github.io/shapez-mods/">返回展示首页</a></aside></section>
+    </main>
+    <footer class="site-footer"><div class="shell"><span>shapez.io Mods Collection</span><a href="https://github.com/ct-yx/shapez-mods">GitHub Repository ↗</a></div></footer>
+</body>
+</html>

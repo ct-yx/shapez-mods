@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="扩大进入地图总览前的缩放范围，并在低缩放时简化传送带绘制。">
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+    <title>Zoom out before Mapmode · shapez.io Mods</title>
+    <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+    <header class="site-header"><nav class="nav"><a class="brand" href="../index.html"><span class="brand-mark">◇</span>shapez.io Mods</a><div class="nav-links"><a href="../index.html#mods">全部 Mod</a><a href="https://github.com/ct-yx/shapez-mods/blob/main/mods/zoomout-before-mapmode.js">源码 ↗</a></div></nav></header>
+    <main class="shell">
+        <section class="page-hero"><div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><span>视图</span></div><span class="tag">视图</span><h1>Zoom out before Mapmode</h1><p class="lead">扩大进入地图总览前的缩放范围，并在低缩放时简化传送带绘制。</p><div class="meta-row"><span class="meta">版本 1.5.1</span><span class="meta">文件 <code>zoomout-before-mapmode.js</code></span><span class="meta">shapez.io 1.x</span></div></section>
+        <section class="page-layout"><article class="prose"><h2>用途</h2><p>这个 Mod 面向大工厂规划：可以在进入地图总览之前看得更远，同时降低远距离观察时传送带物品和动画箭头带来的绘制负担。</p><h2>核心功能</h2><ul><li>进入地图总览前的缩小范围可设置为原版的 1–8×，默认 2×。</li><li>默认实际镜头缩放达到 0.5× 或以下时，仅绘制每条传送带路径的首尾物品。</li><li>简化模式中的传送带使用无动态箭头的静态底图。</li><li>鼠标靠近端点物品会放大显示；相邻的同类端点会合并，避免视觉堆叠。</li><li>配置依据 camera.zoomLevel，而不是 1× / 5× / 100× 的模拟倍率。</li></ul><h2>使用方法</h2><ul><li>启用 Structured Mod Settings UI 后，在「地图总览缩放」卡片中调整范围和简化阈值。</li><li>对超大型工厂建议保持「低缩放时简化传送带物品」开启。</li><li>如果只想恢复原版地图范围，将预览范围设置为 1×。</li></ul><section><h2>实机截图</h2><div class="gallery"><figure class="large contain"><img src="../assets/screenshots/zoomout-settings.png" alt="地图总览缩放设置"><figcaption>可单独设置进入地图总览前的缩小范围与低缩放渲染阈值。</figcaption></figure><figure class="small contain"><img src="../assets/screenshots/zoomout-factory-close.png" alt="缩放前的工厂布局"><figcaption>较近视角下仍可辨认主要物流线路。</figcaption></figure><figure class="small contain"><img src="../assets/screenshots/zoomout-map-overview.png" alt="远距离地图总览"><figcaption>远视角适合检查大型工厂中各分区与长距离物流的连接。</figcaption></figure></div></section><h2>兼容性与注意事项</h2><div class="notice">该 Mod 不改变普通建造镜头的最小缩放限制，只调整进入地图总览前的阈值。</div></article><aside class="aside"><h3>获取方式</h3><p>下载整合包后，只需将本 Mod 对应的 JS 文件复制到游戏 Mod 目录。</p><a class="button primary" href="../downloads/shapez-mods-modpack.zip">下载 ZIP</a><a class="button" href="https://github.com/ct-yx/shapez-mods/blob/main/mods/zoomout-before-mapmode.js">查看源码 ↗</a><a class="button" href="https://ct-yx.github.io/shapez-mods/">返回展示首页</a></aside></section>
+    </main>
+    <footer class="site-footer"><div class="shell"><span>shapez.io Mods Collection</span><a href="https://github.com/ct-yx/shapez-mods">GitHub Repository ↗</a></div></footer>
+</body>
+</html>

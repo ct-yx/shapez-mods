@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="把多个 Mod 的参数收进游戏原生设置页，提供统一的字段渲染、持久化和中文界面。">
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+    <title>Structured Mod Settings UI · shapez.io Mods</title>
+    <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+    <header class="site-header"><nav class="nav"><a class="brand" href="../index.html"><span class="brand-mark">◇</span>shapez.io Mods</a><div class="nav-links"><a href="../index.html#mods">全部 Mod</a><a href="https://github.com/ct-yx/shapez-mods/blob/main/mods/structured-mod-settings.js">源码 ↗</a></div></nav></header>
+    <main class="shell">
+        <section class="page-hero"><div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><span>基础设施</span></div><span class="tag">基础设施</span><h1>Structured Mod Settings UI</h1><p class="lead">把多个 Mod 的参数收进游戏原生设置页，提供统一的字段渲染、持久化和中文界面。</p><div class="meta-row"><span class="meta">版本 1.0.1</span><span class="meta">文件 <code>structured-mod-settings.js</code></span><span class="meta">shapez.io 1.x</span></div></section>
+        <section class="page-layout"><article class="prose"><h2>用途</h2><p>这是整合包的设置前置。它在游戏的设置页新增「游戏模组（MODS）」分类，其他 Mod 只需注册字段定义，就能得到统一风格的开关、滑块、下拉框和恢复默认按钮。</p><h2>核心功能</h2><ul><li>按 Mod 分组的原生设置卡片，不额外占用游戏 HUD。</li><li>支持布尔开关、数值、下拉选项、文本、说明标题和恢复默认。</li><li>自动按游戏语言显示简体中文或英文，并统一保存各 Mod 的参数。</li><li>提供全局 API 与延迟注册队列，加载顺序靠前的 Mod 也能在前置初始化后补上设置卡片。</li></ul><h2>使用方法</h2><ul><li>将本 Mod 与需要设置项的 Mod 一起放入游戏 Mod 目录。</li><li>进入「设置 → 游戏模组（MODS）」即可查看已注册的卡片。</li><li>当前 Belt Speed Control、Key Reform 和 Zoom out before Mapmode 会自动接入。</li></ul><section><h2>实机截图</h2><div class="gallery"><figure class="full contain"><img src="../assets/screenshots/structured-settings-overview.png" alt="游戏模组设置总览"><figcaption>游戏原生设置中新增的「游戏模组（MODS）」分类。</figcaption></figure></div></section><h2>兼容性与注意事项</h2><div class="notice">建议启用在所有带可配置参数的 Mod 之前；即使加载顺序不同，延迟注册机制仍会尝试补齐设置。</div></article><aside class="aside"><h3>获取方式</h3><p>下载整合包后，只需将本 Mod 对应的 JS 文件复制到游戏 Mod 目录。</p><a class="button primary" href="../downloads/shapez-mods-modpack.zip">下载 ZIP</a><a class="button" href="https://github.com/ct-yx/shapez-mods/blob/main/mods/structured-mod-settings.js">查看源码 ↗</a><a class="button" href="https://ct-yx.github.io/shapez-mods/">返回展示首页</a></aside></section>
+    </main>
+    <footer class="site-footer"><div class="shell"><span>shapez.io Mods Collection</span><a href="https://github.com/ct-yx/shapez-mods">GitHub Repository ↗</a></div></footer>
+</body>
+</html>

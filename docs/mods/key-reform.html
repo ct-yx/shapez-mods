@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="以 T/R 加数字键和滚轮连续切换建筑变形体与朝向。">
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+    <title>Key Reform · shapez.io Mods</title>
+    <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+    <header class="site-header"><nav class="nav"><a class="brand" href="../index.html"><span class="brand-mark">◇</span>shapez.io Mods</a><div class="nav-links"><a href="../index.html#mods">全部 Mod</a><a href="https://github.com/ct-yx/shapez-mods/blob/main/mods/key-reform.js">源码 ↗</a></div></nav></header>
+    <main class="shell">
+        <section class="page-hero"><div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><span>建造</span></div><span class="tag">建造</span><h1>Key Reform</h1><p class="lead">以 T/R 加数字键和滚轮连续切换建筑变形体与朝向。</p><div class="meta-row"><span class="meta">版本 1.1.8</span><span class="meta">文件 <code>key-reform.js</code></span><span class="meta">shapez.io 1.x</span></div></section>
+        <section class="page-layout"><article class="prose"><h2>用途</h2><p>Key Reform 只在建造模式接管组合输入，不影响普通滚轮缩放。它会扫描当前已注册建筑的变形体，因此也能与其他 Mod 新增的变形体共同工作。</p><h2>核心功能</h2><ul><li>按住 T 再按数字键，可按配置选择当前建筑的变形体。</li><li>按住 R 再按 1 / 2 / 3 / 4，分别设置上 / 右 / 下 / 左朝向。</li><li>按住 T + 滚轮循环当前建筑的全部可用变形体；按住 R + 滚轮每格旋转 90°。</li><li>默认映射优先匹配多路平衡器：T+4、T+5、T+8、T+0、T+6 分别对应 4 / 5 / 8 / 10 / 16 路。</li><li>滚轮对触控板的细小 delta 做帧内累积，避免一次滑动重复跳过变形体。</li></ul><h2>使用方法</h2><ul><li>启用后进入「游戏模组（MODS）→ 按键改革」调整 T+0 至 T+9 的映射。</li><li>选择「自动 / 按当前」可保留按当前建筑上下文回退选择的逻辑。</li><li>组合键按住期间会阻止镜头缩放；松开组合键后普通滚轮保持原版行为。</li></ul><section><h2>实机截图</h2><div class="gallery"><figure class="full contain"><img src="../assets/screenshots/key-reform-settings.png" alt="按键改革设置"><figcaption>T+数字键映射会在游戏启动时扫描并列出可用变形体。</figcaption></figure></div></section><h2>兼容性与注意事项</h2><div class="notice">与 Balancer Variants 组合时，可快速在多路平衡器之间切换。</div></article><aside class="aside"><h3>获取方式</h3><p>下载整合包后，只需将本 Mod 对应的 JS 文件复制到游戏 Mod 目录。</p><a class="button primary" href="../downloads/shapez-mods-modpack.zip">下载 ZIP</a><a class="button" href="https://github.com/ct-yx/shapez-mods/blob/main/mods/key-reform.js">查看源码 ↗</a><a class="button" href="https://ct-yx.github.io/shapez-mods/">返回展示首页</a></aside></section>
+    </main>
+    <footer class="site-footer"><div class="shell"><span>shapez.io Mods Collection</span><a href="https://github.com/ct-yx/shapez-mods">GitHub Repository ↗</a></div></footer>
+</body>
+</html>

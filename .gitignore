@@ -1,2 +1,4 @@
 .DS_Store
 *.log
+# Unrelated local crash report; Factory Stress Lab report samples remain tracked.
+reports/1.txt

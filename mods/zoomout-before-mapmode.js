@@ -3,14 +3,13 @@ const METADATA = {
     website: "https://github.com/ct-yx/shapez-mods",
     author: "ct-yx & Codex",
     name: "Zoom out before Mapmode",
-    version: "1.4.0",
+    version: "1.5.0",
     id: "zoomout-mapmode",
     description: "Changes map mode zoom and reduces belt item rendering at low camera zoom.",
     minimumGameVersion: ">=1.5.0",
     doesNotAffectSavegame: true,
     settings: {
-        mapPreviewZoomMultiplier: 0.5,
-        normalCameraZoomMultiplier: 1,
+        mapPreviewRangeMultiplier: 2,
         compactBeltItems: true,
         compactBeltZoom: 0.5,
     },
@@ -18,8 +17,7 @@ const METADATA = {
 
 const TILE_SIZE = 32;
 const VANILLA_MAP_PREVIEW_ZOOM_FALLBACK = 0.9;
-const DEFAULT_MAP_PREVIEW_MULTIPLIER = 0.5;
-const DEFAULT_NORMAL_CAMERA_MULTIPLIER = 1;
+const DEFAULT_MAP_PREVIEW_RANGE_MULTIPLIER = 2;
 const DEFAULT_COMPACT_BELT_ZOOM = 0.5;
 const COMPACT_BELT_HOVER_DIAMETER_MULTIPLIER = 2.4;
 const COMPACT_BELT_HOVER_RADIUS_PX = 30;
@@ -28,13 +26,9 @@ const COMPACT_BELT_MERGE_RADIUS_PX = 38;
 class Mod extends shapez.Mod {
     init() {
         this.mapPreviewVanillaZoom = this.getVanillaMapPreviewZoom();
-        this.settings.mapPreviewZoomMultiplier = this.normalizeMultiplier(
-            this.settings.mapPreviewZoomMultiplier,
-            DEFAULT_MAP_PREVIEW_MULTIPLIER
-        );
-        this.settings.normalCameraZoomMultiplier = this.normalizeMultiplier(
-            this.settings.normalCameraZoomMultiplier,
-            DEFAULT_NORMAL_CAMERA_MULTIPLIER
+        this.settings.mapPreviewRangeMultiplier = this.normalizeMapPreviewRangeMultiplier(
+            this.settings.mapPreviewRangeMultiplier,
+            DEFAULT_MAP_PREVIEW_RANGE_MULTIPLIER
         );
         this.settings.compactBeltItems = this.settings.compactBeltItems !== false;
         this.settings.compactBeltZoom = this.normalizeZoom(
@@ -44,14 +38,13 @@ class Mod extends shapez.Mod {
         this.settingsPanel = null;
         this.settingsApi = null;
 
-        this.installMinimumZoomPatch();
         this.registerSettingsWhenAvailable();
         this.installBeltItemRenderingPatch();
-        this.applyMapPreviewZoom(this.getMapPreviewMultiplier());
+        this.applyMapPreviewRange(this.getMapPreviewRangeMultiplier());
 
         this.signals.stateEntered.add(() => {
             this.registerSettingsWhenAvailable();
-            this.applyMapPreviewZoom(this.getMapPreviewMultiplier());
+            this.applyMapPreviewRange(this.getMapPreviewRangeMultiplier());
         });
     }
 
@@ -90,13 +83,9 @@ class Mod extends shapez.Mod {
 
     registerStructuredSettings(settingsApi) {
         this.settingsApi = settingsApi;
-        const mapPreviewDefault = this.normalizeMultiplier(
-            this.settings.mapPreviewZoomMultiplier,
-            DEFAULT_MAP_PREVIEW_MULTIPLIER
-        );
-        const normalCameraDefault = this.normalizeMultiplier(
-            this.settings.normalCameraZoomMultiplier,
-            DEFAULT_NORMAL_CAMERA_MULTIPLIER
+        const mapPreviewRangeDefault = this.normalizeMapPreviewRangeMultiplier(
+            this.settings.mapPreviewRangeMultiplier,
+            DEFAULT_MAP_PREVIEW_RANGE_MULTIPLIER
         );
         const compactDefault = this.normalizeZoom(this.settings.compactBeltZoom);
 
@@ -104,42 +93,28 @@ class Mod extends shapez.Mod {
             id: METADATA.id,
             title: { en: "Zoom out before Mapmode", zh: "地图总览缩放" },
             description: {
-                en: "Separate map-preview and normal-camera zoom ranges. Both controls use vanilla as 1x.",
-                zh: "分别设置地图预览和普通镜头的缩小范围；两个设置都以原版为 1x。",
+                en: "Controls how far you can zoom out before entering map mode. Vanilla is 1x.",
+                zh: "设置进入地图总览前可缩小的范围；原版范围为 1x。",
             },
             fields: [
                 {
-                    id: "mapPreviewZoomMultiplier",
+                    id: "mapPreviewRangeMultiplier",
                     type: "number",
-                    label: { en: "Map preview zoom range", zh: "地图预览缩放范围" },
+                    label: { en: "Pre-map-mode zoom-out range", zh: "进入地图总览前的缩小范围" },
                     description: {
-                        en: "Multiplier relative to vanilla (1x). Lower values let the map preview zoom out farther and switch later.",
-                        zh: "相对于原版的倍数（1x）。数值越小，地图预览可以缩得更远，切换也更晚。",
+                        en: "Multiplier relative to vanilla (1x). Higher values let you zoom out farther before map mode; 4x is the maximum.",
+                        zh: "相对于原版的倍数（1x）。数值越大，进入地图总览前可以缩得更远；最高 4x。",
                     },
-                    min: 0.02,
-                    max: 2,
-                    step: 0.01,
-                    default: mapPreviewDefault,
-                    onChange: value => this.applyMapPreviewZoom(value),
-                },
-                {
-                    id: "normalCameraZoomMultiplier",
-                    type: "number",
-                    label: { en: "Normal camera zoom-out range", zh: "普通镜头缩小范围" },
-                    description: {
-                        en: "Multiplier relative to vanilla (1x). Lower values allow the normal camera to zoom out farther and may increase the visible/generated area.",
-                        zh: "相对于原版的倍数（1x）。数值越小，普通镜头可以缩得更远，也可能增加可见/生成区域。",
-                    },
-                    min: 0.1,
-                    max: 2,
-                    step: 0.01,
-                    default: normalCameraDefault,
-                    onChange: value => this.applyNormalCameraZoomMultiplier(value),
+                    min: 1,
+                    max: 4,
+                    step: 0.05,
+                    default: mapPreviewRangeDefault,
+                    onChange: value => this.applyMapPreviewRange(value),
                 },
                 {
                     id: "zoomHelp",
                     type: "heading",
-                    label: { en: "1x = vanilla · lower = farther out", zh: "1x = 原版 · 越小 = 缩得更远" },
+                    label: { en: "1x = vanilla · higher = farther out", zh: "1x = 原版 · 越大 = 缩得更远" },
                 },
                 {
                     id: "compactBeltItems",
@@ -172,41 +147,26 @@ class Mod extends shapez.Mod {
             ],
         });
 
-        this.settings.mapPreviewZoomMultiplier = this.normalizeMultiplier(
-            this.settingsPanel.get("mapPreviewZoomMultiplier"),
-            DEFAULT_MAP_PREVIEW_MULTIPLIER
-        );
-        this.settings.normalCameraZoomMultiplier = this.normalizeMultiplier(
-            this.settingsPanel.get("normalCameraZoomMultiplier"),
-            DEFAULT_NORMAL_CAMERA_MULTIPLIER
+        this.settings.mapPreviewRangeMultiplier = this.normalizeMapPreviewRangeMultiplier(
+            this.settingsPanel.get("mapPreviewRangeMultiplier"),
+            DEFAULT_MAP_PREVIEW_RANGE_MULTIPLIER
         );
         this.settings.compactBeltItems = this.settingsPanel.get("compactBeltItems") !== false;
         this.settings.compactBeltZoom = this.normalizeZoom(
             this.settingsPanel.get("compactBeltZoom"),
             DEFAULT_COMPACT_BELT_ZOOM
         );
-        this.applyMapPreviewZoom(this.getMapPreviewMultiplier());
+        this.applyMapPreviewRange(this.getMapPreviewRangeMultiplier());
     }
 
-    getMapPreviewMultiplier() {
+    getMapPreviewRangeMultiplier() {
         if (this.settingsPanel) {
-            const value = this.settingsPanel.get("mapPreviewZoomMultiplier");
-            if (value !== undefined) return this.normalizeMultiplier(value);
+            const value = this.settingsPanel.get("mapPreviewRangeMultiplier");
+            if (value !== undefined) return this.normalizeMapPreviewRangeMultiplier(value);
         }
-        return this.normalizeMultiplier(
-            this.settings.mapPreviewZoomMultiplier,
-            DEFAULT_MAP_PREVIEW_MULTIPLIER
-        );
-    }
-
-    getNormalCameraZoomMultiplier() {
-        if (this.settingsPanel) {
-            const value = this.settingsPanel.get("normalCameraZoomMultiplier");
-            if (value !== undefined) return this.normalizeMultiplier(value);
-        }
-        return this.normalizeMultiplier(
-            this.settings.normalCameraZoomMultiplier,
-            DEFAULT_NORMAL_CAMERA_MULTIPLIER
+        return this.normalizeMapPreviewRangeMultiplier(
+            this.settings.mapPreviewRangeMultiplier,
+            DEFAULT_MAP_PREVIEW_RANGE_MULTIPLIER
         );
     }
 
@@ -263,32 +223,6 @@ class Mod extends shapez.Mod {
             return mod.drawCompactBeltPath(this, parameters);
         };
         prototype[marker] = true;
-    }
-
-    installMinimumZoomPatch() {
-        const RegularGameMode = typeof shapez !== "undefined"
-            ? shapez.RegularGameMode
-            : null;
-        if (!RegularGameMode || !RegularGameMode.prototype
-            || typeof RegularGameMode.prototype.getMinimumZoom !== "function"
-            || !this.modInterface || typeof this.modInterface.extendClass !== "function") {
-            return;
-        }
-
-        const marker = "__zoomoutMapmodeMinimumZoom_140";
-        if (RegularGameMode.prototype[marker]) return;
-
-        const mod = this;
-        this.modInterface.extendClass(RegularGameMode, ({ $old }) => ({
-            getMinimumZoom() {
-                const vanillaMinimum = Number($old.getMinimumZoom.call(this));
-                if (!Number.isFinite(vanillaMinimum) || vanillaMinimum <= 0) {
-                    return vanillaMinimum;
-                }
-                return vanillaMinimum * mod.getNormalCameraZoomMultiplier();
-            },
-        }));
-        RegularGameMode.prototype[marker] = true;
     }
 
     drawCompactBeltPath(path, parameters) {
@@ -420,18 +354,13 @@ class Mod extends shapez.Mod {
         return { hovered, merged };
     }
 
-    applyMapPreviewZoom(value) {
-        const multiplier = this.normalizeMultiplier(value, DEFAULT_MAP_PREVIEW_MULTIPLIER);
-        this.settings.mapPreviewZoomMultiplier = multiplier;
-        shapez.globalConfig.mapChunkOverviewMinZoom = this.mapPreviewVanillaZoom * multiplier;
-        if (typeof this.saveSettings === "function") this.saveSettings();
-    }
-
-    applyNormalCameraZoomMultiplier(value) {
-        this.settings.normalCameraZoomMultiplier = this.normalizeMultiplier(
+    applyMapPreviewRange(value) {
+        const multiplier = this.normalizeMapPreviewRangeMultiplier(
             value,
-            DEFAULT_NORMAL_CAMERA_MULTIPLIER
+            DEFAULT_MAP_PREVIEW_RANGE_MULTIPLIER
         );
+        this.settings.mapPreviewRangeMultiplier = multiplier;
+        shapez.globalConfig.mapChunkOverviewMinZoom = this.mapPreviewVanillaZoom / multiplier;
         if (typeof this.saveSettings === "function") this.saveSettings();
     }
 
@@ -458,9 +387,9 @@ class Mod extends shapez.Mod {
         return Math.max(0.1, Math.min(1.5, parsed));
     }
 
-    normalizeMultiplier(value, fallback = 1) {
+    normalizeMapPreviewRangeMultiplier(value, fallback = 1) {
         const parsed = Number(value);
         if (!Number.isFinite(parsed)) return fallback;
-        return Math.max(0.02, Math.min(2, parsed));
+        return Math.max(1, Math.min(4, parsed));
     }
 }

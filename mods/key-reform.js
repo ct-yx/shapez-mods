@@ -3,9 +3,9 @@ const METADATA = {
     website: "https://github.com/ct-yx/shapez-mods",
     author: "ct-yx & Codex",
     name: "Key Reform",
-    version: "1.1.7",
+    version: "1.1.8",
     id: "key-reform-ctyx",
-    description: "Adds configurable T+number and T/R mouse-wheel shortcuts for every building variant.",
+    description: "Adds T+number and smooth T/R mouse-wheel shortcuts for every building variant.",
     minimumGameVersion: ">=1.5.0",
     doesNotAffectSavegame: true,
     settings: {
@@ -20,26 +20,18 @@ const METADATA = {
         tDigit7: "__auto__",
         tDigit8: "balancer::balancer_8way",
         tDigit9: "__auto__",
-        wheelThreshold: 50,
     },
 };
 
 const KEY_T = "T".charCodeAt(0);
 const KEY_R = "R".charCodeAt(0);
 const FIRST_DIGIT = "0".charCodeAt(0);
-// A normal wheel detent is usually a large delta, while a trackpad emits many
-// small pixel deltas. De-duplicate only very close, large alias events (for
-// example wheel + mousewheel), and use accumulated distance for small deltas.
-// This keeps fast, intentional wheel switching responsive.
-const WHEEL_DUPLICATE_WINDOW_MS = 70;
-const WHEEL_STREAM_RESET_MS = 240;
-const WHEEL_LARGE_DELTA_MIN = 50;
-const WHEEL_LARGE_DETENT_UNITS = 100;
-// Lower threshold for high-resolution/trackpad events so small scrolling
-// responds sooner without changing the one-detent behavior of normal wheels.
-const DEFAULT_WHEEL_SMALL_STEP_UNITS = 50;
-const MIN_WHEEL_SMALL_STEP_UNITS = 10;
-const MAX_WHEEL_SMALL_STEP_UNITS = 100;
+// Normalization follows the established normalize-wheel pattern: legacy
+// wheelDelta/detail yields a physical spin amount, while deltaY is retained
+// as a pixel-distance fallback for high-resolution trackpads.
+const WHEEL_PIXEL_STEP = 10;
+const WHEEL_LINE_HEIGHT = 40;
+const WHEEL_PAGE_HEIGHT = 800;
 const AUTO_VARIANT = "__auto__";
 const TARGET_SEPARATOR = "::";
 const DIGITS = Array.from({ length: 10 }, (_, digit) => digit);
@@ -110,23 +102,6 @@ class Mod extends shapez.Mod {
                     this.saveSettings();
                 },
             },
-            {
-                id: "wheelThreshold",
-                type: "number",
-                label: { en: "Small scroll threshold", zh: "小幅滚动切换阈值" },
-                description: {
-                    en: "Lower values switch sooner for trackpads and high-resolution wheels. Range: 10–100.",
-                    zh: "数值越小，触控板和高清滚轮越容易触发切换。范围：10–100。",
-                },
-                min: MIN_WHEEL_SMALL_STEP_UNITS,
-                max: MAX_WHEEL_SMALL_STEP_UNITS,
-                step: 5,
-                default: DEFAULT_WHEEL_SMALL_STEP_UNITS,
-                onChange: value => {
-                    this.settings.wheelThreshold = this.normalizeWheelThreshold(value);
-                    this.saveSettings();
-                },
-            },
         ];
 
         for (const digit of DIGITS) {
@@ -159,9 +134,6 @@ class Mod extends shapez.Mod {
         });
 
         this.settings.enabled = this.settingsPanel.get("enabled") !== false;
-        this.settings.wheelThreshold = this.normalizeWheelThreshold(
-            this.settingsPanel.get("wheelThreshold")
-        );
         for (const digit of DIGITS) {
             const value = this.settingsPanel.get("tDigit" + digit);
             if (value !== undefined) this.settings["tDigit" + digit] = value;
@@ -280,22 +252,6 @@ class Mod extends shapez.Mod {
         return this.settings.enabled !== false;
     }
 
-    normalizeWheelThreshold(value) {
-        const number = Number(value);
-        if (!Number.isFinite(number)) return DEFAULT_WHEEL_SMALL_STEP_UNITS;
-        return Math.max(
-            MIN_WHEEL_SMALL_STEP_UNITS,
-            Math.min(MAX_WHEEL_SMALL_STEP_UNITS, number)
-        );
-    }
-
-    getWheelSmallStepUnits() {
-        const configured = this.settingsPanel && typeof this.settingsPanel.get === "function"
-            ? this.settingsPanel.get("wheelThreshold")
-            : this.settings.wheelThreshold;
-        return this.normalizeWheelThreshold(configured);
-    }
-
     installForGame(root) {
         if (!root || root.__keyReformInstalled_113) return;
         root.__keyReformInstalled_113 = true;
@@ -303,11 +259,11 @@ class Mod extends shapez.Mod {
         root.__keyReformKeyState_113 = {
             t: false,
             r: false,
-            lastWheelEventAt: -Infinity,
-            lastWheelDirection: 0,
-            lastWheelMagnitude: 0,
-            lastWheelWasLarge: false,
-            wheelAccumulator: 0,
+            pendingVariantSpin: 0,
+            pendingRotationSpin: 0,
+            variantSpinRemainder: 0,
+            rotationSpinRemainder: 0,
+            wheelFrameScheduled: false,
         };
 
         const inputReceiver = root.gameState && root.gameState.inputReciever;
@@ -328,10 +284,10 @@ class Mod extends shapez.Mod {
         const keyupHandler = event => this.updateHeldKey(root, event, false);
         const blurHandler = () => this.clearHeldKeys(root);
 
-        // Camera zoom is handled by a canvas/game input listener. Register on
-        // every available event target in capture phase. This covers both the
-        // normal canvas event path and browser/game versions which attach the
-        // zoom handler to document or window.
+        // Camera zoom is handled by a canvas/game input listener. Capture the
+        // modern WheelEvent before it reaches that handler. Do not subscribe to
+        // both wheel and mousewheel: Chromium can expose both for one physical
+        // notch, which is the source of an accidental double variant change.
         const targets = [];
         if (typeof window !== "undefined" && window.addEventListener) {
             targets.push(window);
@@ -348,8 +304,6 @@ class Mod extends shapez.Mod {
             target.addEventListener("keydown", keydownHandler, listenerOptions);
             target.addEventListener("keyup", keyupHandler, listenerOptions);
             target.addEventListener("wheel", wheelHandler, listenerOptions);
-            // Older Chromium/Electron builds may still dispatch this alias.
-            target.addEventListener("mousewheel", wheelHandler, listenerOptions);
         }
         if (typeof window !== "undefined" && window.addEventListener) {
             window.addEventListener("blur", blurHandler, { capture: true });
@@ -364,7 +318,6 @@ class Mod extends shapez.Mod {
                     target.removeEventListener("keydown", keydownHandler, listenerOptions);
                     target.removeEventListener("keyup", keyupHandler, listenerOptions);
                     target.removeEventListener("wheel", wheelHandler, listenerOptions);
-                    target.removeEventListener("mousewheel", wheelHandler, listenerOptions);
                 }
                 if (typeof window !== "undefined" && window.removeEventListener) {
                     window.removeEventListener("blur", blurHandler, { capture: true });
@@ -391,13 +344,8 @@ class Mod extends shapez.Mod {
         if (!state) return;
         if (keyCode === KEY_T) state.t = isDown;
         if (keyCode === KEY_R) state.r = isDown;
-        if (!state.t && !state.r) {
-            state.lastWheelEventAt = -Infinity;
-            state.lastWheelDirection = 0;
-            state.lastWheelMagnitude = 0;
-            state.lastWheelWasLarge = false;
-            state.wheelAccumulator = 0;
-        }
+        if (!state.t) this.clearWheelSpin(state, "variant");
+        if (!state.r) this.clearWheelSpin(state, "rotation");
     }
 
     clearHeldKeys(root) {
@@ -405,11 +353,19 @@ class Mod extends shapez.Mod {
         if (!state) return;
         state.t = false;
         state.r = false;
-        state.lastWheelEventAt = -Infinity;
-        state.lastWheelDirection = 0;
-        state.lastWheelMagnitude = 0;
-        state.lastWheelWasLarge = false;
-        state.wheelAccumulator = 0;
+        this.clearWheelSpin(state, "variant");
+        this.clearWheelSpin(state, "rotation");
+    }
+
+    clearWheelSpin(state, mode) {
+        if (!state) return;
+        if (mode === "variant") {
+            state.pendingVariantSpin = 0;
+            state.variantSpinRemainder = 0;
+        } else {
+            state.pendingRotationSpin = 0;
+            state.rotationSpinRemainder = 0;
+        }
     }
 
     isKeyDown(root, keyCode) {
@@ -502,9 +458,21 @@ class Mod extends shapez.Mod {
         const holdingR = this.isKeyDown(root, KEY_R);
         if (!holdingT && !holdingR) return;
 
-        // Cancel every wheel event before checking the placer or throttle.
-        // Otherwise a wheel burst can still reach the camera zoom handler
-        // while T/R is held, especially when the game receives tiny deltas.
+        // The listener is attached in capture phase to window/document/canvas
+        // for compatibility. Mark the event so the same WheelEvent can never
+        // contribute its delta more than once along that propagation path.
+        if (event.__keyReformWheelHandled_118) return;
+        try {
+            Object.defineProperty(event, "__keyReformWheelHandled_118", {
+                value: true,
+                configurable: true,
+            });
+        } catch (error) {
+            try { event.__keyReformWheelHandled_118 = true; } catch (ignored) { }
+        }
+
+        // Prevent camera zoom while the T/R chord is active, but preserve the
+        // normalized distance for the variant/rotation buffer below.
         if (typeof event.preventDefault === "function") event.preventDefault();
         if (typeof event.stopImmediatePropagation === "function") {
             event.stopImmediatePropagation();
@@ -516,92 +484,103 @@ class Mod extends shapez.Mod {
             event.cancelBubble = true;
         } catch (error) { }
 
-        const wheelDelta = this.getWheelDelta(event);
-        if (!wheelDelta) return;
+        const normalized = this.normalizeWheel(event);
+        if (!normalized.spinY) return;
         const state = root.__keyReformKeyState_113;
-        const now = this.getNow();
-        const direction = wheelDelta < 0 ? 1 : -1;
-        const magnitude = Math.abs(wheelDelta);
-        const isLarge = magnitude >= WHEEL_LARGE_DELTA_MIN;
-        if (state) {
-            const gap = now - state.lastWheelEventAt;
-            const sameDirection = state.lastWheelDirection === direction;
-            if (!sameDirection || gap > WHEEL_STREAM_RESET_MS) {
-                state.wheelAccumulator = 0;
-            }
+        if (!state) return;
+        if (holdingT) state.pendingVariantSpin += normalized.spinY;
+        else if (holdingR) state.pendingRotationSpin += normalized.spinY;
+        this.scheduleWheelFlush(root, state);
+    }
 
-            // Only large, similar events are treated as duplicate aliases.
-            // Small equal deltas are deliberately not de-duplicated because
-            // they are the normal event stream from a trackpad.
-            const similarLargeEvent = isLarge && state.lastWheelWasLarge
-                && Math.abs(magnitude - state.lastWheelMagnitude)
-                    <= Math.max(8, state.lastWheelMagnitude * 0.2);
-            const isDuplicate = sameDirection
-                && gap >= 0 && gap < WHEEL_DUPLICATE_WINDOW_MS
-                && similarLargeEvent;
+    normalizeWheel(event) {
+        if (!event) return { spinY: 0, pixelY: 0 };
 
-            // Refresh the event signature even when an alias is ignored. A
-            // burst of duplicate events therefore remains one wheel action,
-            // while a deliberate fast scroll after the threshold still works.
-            state.lastWheelEventAt = now;
-            state.lastWheelDirection = direction;
-            state.lastWheelMagnitude = magnitude;
-            state.lastWheelWasLarge = isLarge;
-            if (isDuplicate) return;
+        let spinY = 0;
+        let pixelY = 0;
+        let hasLegacySpin = false;
+        if (Number.isFinite(Number(event.detail)) && Number(event.detail) !== 0) {
+            spinY = Number(event.detail);
+            hasLegacySpin = true;
         }
-        const placer = this.getPlacer(root);
-        if (!placer) return;
-        const variants = this.getAvailableVariants(placer);
-        let steps = 0;
-        if (state && isLarge) {
-            // Large deltas represent one or more physical detents directly.
-            steps = Math.max(1, Math.round(magnitude / WHEEL_LARGE_DETENT_UNITS));
-            state.wheelAccumulator = 0;
-        } else if (state) {
-            state.wheelAccumulator += magnitude / this.getWheelSmallStepUnits();
-            steps = Math.floor(state.wheelAccumulator);
-            state.wheelAccumulator -= steps;
+        if (Number.isFinite(Number(event.wheelDelta)) && Number(event.wheelDelta) !== 0) {
+            spinY = -Number(event.wheelDelta) / 120;
+            hasLegacySpin = true;
+        }
+        if (Number.isFinite(Number(event.wheelDeltaY)) && Number(event.wheelDeltaY) !== 0) {
+            spinY = -Number(event.wheelDeltaY) / 120;
+            hasLegacySpin = true;
+        }
+        pixelY = spinY * WHEEL_PIXEL_STEP;
+        if (Number.isFinite(Number(event.deltaY)) && Number(event.deltaY) !== 0) {
+            pixelY = Number(event.deltaY);
+        }
+        const deltaMode = Number(event.deltaMode) || 0;
+        if (deltaMode === 1) pixelY *= WHEEL_LINE_HEIGHT;
+        else if (deltaMode === 2) pixelY *= WHEEL_PAGE_HEIGHT;
+
+        if (!hasLegacySpin && pixelY) {
+            // Line/page events usually represent a physical wheel detent. For
+            // pixel events, a larger delta is also one standard wheel step;
+            // fine trackpad deltas remain fractional and are accumulated.
+            if (deltaMode > 0) spinY = pixelY < 0 ? -1 : 1;
+            else if (Math.abs(pixelY) >= WHEEL_LINE_HEIGHT) spinY = pixelY / 100;
+            else spinY = pixelY / WHEEL_LINE_HEIGHT;
+        }
+        return { spinY, pixelY };
+    }
+
+    scheduleWheelFlush(root, state) {
+        if (state.wheelFrameScheduled) return;
+        state.wheelFrameScheduled = true;
+        const flush = () => {
+            state.wheelFrameScheduled = false;
+            this.flushWheelSpin(root, state, "variant");
+            this.flushWheelSpin(root, state, "rotation");
+        };
+        if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+            window.requestAnimationFrame(flush);
+        } else if (typeof requestAnimationFrame === "function") {
+            requestAnimationFrame(flush);
         } else {
-            steps = 1;
+            // Tests and unusual embedded renderers may not expose rAF.
+            flush();
         }
-        if (steps <= 0) return;
-        if (holdingT) {
-            // This is intentionally generic: every building's own available
-            // variant list is used, including variants added by other mods.
-            if (variants.length > 0) {
-                const current = variants.indexOf(placer.currentVariant.get());
-                let index = current < 0 ? 0 : current;
-                for (let step = 0; step < steps; ++step) {
-                    index = (index + direction + variants.length) % variants.length;
-                }
-                placer.setVariant(variants[index]);
-            }
-        } else if (holdingR) {
+    }
+
+    flushWheelSpin(root, state, mode) {
+        const isVariant = mode === "variant";
+        const pendingKey = isVariant ? "pendingVariantSpin" : "pendingRotationSpin";
+        const remainderKey = isVariant ? "variantSpinRemainder" : "rotationSpinRemainder";
+        const pending = Number(state[pendingKey]) || 0;
+        state[pendingKey] = 0;
+        if (!pending) return;
+
+        const totalSpin = (Number(state[remainderKey]) || 0) + pending;
+        const steps = Math.floor(Math.abs(totalSpin));
+        if (steps <= 0) {
+            state[remainderKey] = totalSpin;
+            return;
+        }
+        state[remainderKey] = totalSpin - Math.sign(totalSpin) * steps;
+
+        const placer = this.getPlacer(root);
+        if (!placer) {
+            this.clearWheelSpin(state, mode);
+            return;
+        }
+        const direction = totalSpin < 0 ? 1 : -1;
+        if (isVariant) {
+            const variants = this.getAvailableVariants(placer);
+            if (!variants.length) return;
+            const current = variants.indexOf(placer.currentVariant.get());
+            const baseIndex = current < 0 ? 0 : current;
+            const index = ((baseIndex + direction * steps) % variants.length + variants.length) % variants.length;
+            placer.setVariant(variants[index]);
+        } else {
             this.setRotation(placer, (placer.currentBaseRotation
                 + direction * 90 * steps + 360 * steps) % 360);
         }
     }
 
-    getWheelDelta(event) {
-        if (!event) return 0;
-        if (Number.isFinite(Number(event.deltaY)) && Number(event.deltaY) !== 0) {
-            return Number(event.deltaY);
-        }
-        if (Number.isFinite(Number(event.wheelDelta)) && Number(event.wheelDelta) !== 0) {
-            return -Number(event.wheelDelta);
-        }
-        if (Number.isFinite(Number(event.detail)) && Number(event.detail) !== 0) {
-            return Number(event.detail);
-        }
-        return 0;
-    }
-
-    getNow() {
-        try {
-            if (typeof performance !== "undefined" && typeof performance.now === "function") {
-                return performance.now();
-            }
-        } catch (error) { }
-        return Date.now();
-    }
 }

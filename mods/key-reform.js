@@ -3,7 +3,7 @@ const METADATA = {
     website: "https://github.com/ct-yx/shapez-mods",
     author: "ct-yx & Codex",
     name: "Key Reform",
-    version: "1.1.6",
+    version: "1.1.7",
     id: "key-reform-ctyx",
     description: "Adds configurable T+number and T/R mouse-wheel shortcuts for every building variant.",
     minimumGameVersion: ">=1.5.0",
@@ -20,6 +20,7 @@ const METADATA = {
         tDigit7: "__auto__",
         tDigit8: "balancer::balancer_8way",
         tDigit9: "__auto__",
+        wheelThreshold: 50,
     },
 };
 
@@ -36,7 +37,9 @@ const WHEEL_LARGE_DELTA_MIN = 50;
 const WHEEL_LARGE_DETENT_UNITS = 100;
 // Lower threshold for high-resolution/trackpad events so small scrolling
 // responds sooner without changing the one-detent behavior of normal wheels.
-const WHEEL_SMALL_STEP_UNITS = 50;
+const DEFAULT_WHEEL_SMALL_STEP_UNITS = 50;
+const MIN_WHEEL_SMALL_STEP_UNITS = 10;
+const MAX_WHEEL_SMALL_STEP_UNITS = 100;
 const AUTO_VARIANT = "__auto__";
 const TARGET_SEPARATOR = "::";
 const DIGITS = Array.from({ length: 10 }, (_, digit) => digit);
@@ -107,6 +110,23 @@ class Mod extends shapez.Mod {
                     this.saveSettings();
                 },
             },
+            {
+                id: "wheelThreshold",
+                type: "number",
+                label: { en: "Small scroll threshold", zh: "小幅滚动切换阈值" },
+                description: {
+                    en: "Lower values switch sooner for trackpads and high-resolution wheels. Range: 10–100.",
+                    zh: "数值越小，触控板和高清滚轮越容易触发切换。范围：10–100。",
+                },
+                min: MIN_WHEEL_SMALL_STEP_UNITS,
+                max: MAX_WHEEL_SMALL_STEP_UNITS,
+                step: 5,
+                default: DEFAULT_WHEEL_SMALL_STEP_UNITS,
+                onChange: value => {
+                    this.settings.wheelThreshold = this.normalizeWheelThreshold(value);
+                    this.saveSettings();
+                },
+            },
         ];
 
         for (const digit of DIGITS) {
@@ -139,6 +159,9 @@ class Mod extends shapez.Mod {
         });
 
         this.settings.enabled = this.settingsPanel.get("enabled") !== false;
+        this.settings.wheelThreshold = this.normalizeWheelThreshold(
+            this.settingsPanel.get("wheelThreshold")
+        );
         for (const digit of DIGITS) {
             const value = this.settingsPanel.get("tDigit" + digit);
             if (value !== undefined) this.settings["tDigit" + digit] = value;
@@ -255,6 +278,22 @@ class Mod extends shapez.Mod {
     isEnabled() {
         if (this.settingsPanel) return this.settingsPanel.get("enabled") !== false;
         return this.settings.enabled !== false;
+    }
+
+    normalizeWheelThreshold(value) {
+        const number = Number(value);
+        if (!Number.isFinite(number)) return DEFAULT_WHEEL_SMALL_STEP_UNITS;
+        return Math.max(
+            MIN_WHEEL_SMALL_STEP_UNITS,
+            Math.min(MAX_WHEEL_SMALL_STEP_UNITS, number)
+        );
+    }
+
+    getWheelSmallStepUnits() {
+        const configured = this.settingsPanel && typeof this.settingsPanel.get === "function"
+            ? this.settingsPanel.get("wheelThreshold")
+            : this.settings.wheelThreshold;
+        return this.normalizeWheelThreshold(configured);
     }
 
     installForGame(root) {
@@ -519,7 +558,7 @@ class Mod extends shapez.Mod {
             steps = Math.max(1, Math.round(magnitude / WHEEL_LARGE_DETENT_UNITS));
             state.wheelAccumulator = 0;
         } else if (state) {
-            state.wheelAccumulator += magnitude / WHEEL_SMALL_STEP_UNITS;
+            state.wheelAccumulator += magnitude / this.getWheelSmallStepUnits();
             steps = Math.floor(state.wheelAccumulator);
             state.wheelAccumulator -= steps;
         } else {

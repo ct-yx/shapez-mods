@@ -3,7 +3,7 @@ const METADATA = {
     website: "https://github.com/ct-yx/shapez-mods",
     author: "ct-yx & Codex",
     name: "Key Reform",
-    version: "1.1.4",
+    version: "1.1.5",
     id: "key-reform-ctyx",
     description: "Adds configurable T+number and T/R mouse-wheel shortcuts for every building variant.",
     minimumGameVersion: ">=1.5.0",
@@ -26,10 +26,14 @@ const METADATA = {
 const KEY_T = "T".charCodeAt(0);
 const KEY_R = "R".charCodeAt(0);
 const FIRST_DIGIT = "0".charCodeAt(0);
-// Trackpads and high-resolution wheels emit one user gesture as a stream of
-// events. Only the leading event should change a variant/rotation; further
-// events remain part of the same gesture until scrolling has gone quiet.
-const WHEEL_GESTURE_IDLE_MS = 260;
+// A normal wheel detent is usually a large delta, while a trackpad emits many
+// small pixel deltas. De-duplicate only very close, large alias events (for
+// example wheel + mousewheel), and use accumulated distance for small deltas.
+// This keeps fast, intentional wheel switching responsive.
+const WHEEL_DUPLICATE_WINDOW_MS = 70;
+const WHEEL_STREAM_RESET_MS = 240;
+const WHEEL_LARGE_DELTA_MIN = 50;
+const WHEEL_STEP_UNITS = 100;
 const AUTO_VARIANT = "__auto__";
 const TARGET_SEPARATOR = "::";
 const DIGITS = Array.from({ length: 10 }, (_, digit) => digit);
@@ -259,6 +263,9 @@ class Mod extends shapez.Mod {
             r: false,
             lastWheelEventAt: -Infinity,
             lastWheelDirection: 0,
+            lastWheelMagnitude: 0,
+            lastWheelWasLarge: false,
+            wheelAccumulator: 0,
         };
 
         const inputReceiver = root.gameState && root.gameState.inputReciever;
@@ -345,6 +352,9 @@ class Mod extends shapez.Mod {
         if (!state.t && !state.r) {
             state.lastWheelEventAt = -Infinity;
             state.lastWheelDirection = 0;
+            state.lastWheelMagnitude = 0;
+            state.lastWheelWasLarge = false;
+            state.wheelAccumulator = 0;
         }
     }
 
@@ -355,6 +365,9 @@ class Mod extends shapez.Mod {
         state.r = false;
         state.lastWheelEventAt = -Infinity;
         state.lastWheelDirection = 0;
+        state.lastWheelMagnitude = 0;
+        state.lastWheelWasLarge = false;
+        state.wheelAccumulator = 0;
     }
 
     isKeyDown(root, keyCode) {
@@ -466,29 +479,64 @@ class Mod extends shapez.Mod {
         const state = root.__keyReformKeyState_113;
         const now = this.getNow();
         const direction = wheelDelta < 0 ? 1 : -1;
+        const magnitude = Math.abs(wheelDelta);
+        const isLarge = magnitude >= WHEEL_LARGE_DELTA_MIN;
         if (state) {
-            const isSameGesture = state.lastWheelDirection === direction
-                && now - state.lastWheelEventAt < WHEEL_GESTURE_IDLE_MS;
-            // Always refresh this timestamp, including ignored events. This
-            // prevents a long inertial/trackpad stream from becoming a second
-            // step merely because it outlasted a fixed success-only throttle.
+            const gap = now - state.lastWheelEventAt;
+            const sameDirection = state.lastWheelDirection === direction;
+            if (!sameDirection || gap > WHEEL_STREAM_RESET_MS) {
+                state.wheelAccumulator = 0;
+            }
+
+            // Only large, similar events are treated as duplicate aliases.
+            // Small equal deltas are deliberately not de-duplicated because
+            // they are the normal event stream from a trackpad.
+            const similarLargeEvent = isLarge && state.lastWheelWasLarge
+                && Math.abs(magnitude - state.lastWheelMagnitude)
+                    <= Math.max(8, state.lastWheelMagnitude * 0.2);
+            const isDuplicate = sameDirection
+                && gap >= 0 && gap < WHEEL_DUPLICATE_WINDOW_MS
+                && similarLargeEvent;
+
+            // Refresh the event signature even when an alias is ignored. A
+            // burst of duplicate events therefore remains one wheel action,
+            // while a deliberate fast scroll after the threshold still works.
             state.lastWheelEventAt = now;
             state.lastWheelDirection = direction;
-            if (isSameGesture) return;
+            state.lastWheelMagnitude = magnitude;
+            state.lastWheelWasLarge = isLarge;
+            if (isDuplicate) return;
         }
         const placer = this.getPlacer(root);
         if (!placer) return;
         const variants = this.getAvailableVariants(placer);
+        let steps = 0;
+        if (state && isLarge) {
+            // Large deltas represent one or more physical detents directly.
+            steps = Math.max(1, Math.round(magnitude / WHEEL_STEP_UNITS));
+            state.wheelAccumulator = 0;
+        } else if (state) {
+            state.wheelAccumulator += magnitude / WHEEL_STEP_UNITS;
+            steps = Math.floor(state.wheelAccumulator);
+            state.wheelAccumulator -= steps;
+        } else {
+            steps = 1;
+        }
+        if (steps <= 0) return;
         if (holdingT) {
             // This is intentionally generic: every building's own available
             // variant list is used, including variants added by other mods.
             if (variants.length > 0) {
                 const current = variants.indexOf(placer.currentVariant.get());
-                const index = (current < 0 ? 0 : current + direction + variants.length) % variants.length;
+                let index = current < 0 ? 0 : current;
+                for (let step = 0; step < steps; ++step) {
+                    index = (index + direction + variants.length) % variants.length;
+                }
                 placer.setVariant(variants[index]);
             }
         } else if (holdingR) {
-            this.setRotation(placer, (placer.currentBaseRotation + direction * 90 + 360) % 360);
+            this.setRotation(placer, (placer.currentBaseRotation
+                + direction * 90 * steps + 360 * steps) % 360);
         }
     }
 

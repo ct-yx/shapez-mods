@@ -3,7 +3,7 @@ const METADATA = {
     website: "https://github.com/ct-yx/shapez-mods",
     author: "ct-yx & Codex",
     name: "Balancer Variants",
-    version: "1.0.0",
+    version: "1.0.1",
     id: "balancer-variants-ctyx",
     description: "Adds 4-way, 5-way, 8-way, 10-way and 16-way balancers to the vanilla balancer variants.",
     minimumGameVersion: ">=1.5.0",
@@ -22,17 +22,24 @@ function registerProcessorType(config) {
     shapez.enumItemProcessorTypes[processorType] = processorType;
     shapez.MOD_ITEM_PROCESSOR_SPEEDS[processorType] = () => 1000;
     shapez.MOD_ITEM_PROCESSOR_HANDLERS[processorType] = function(payload) {
-        assert(
-            payload.entity.components.ItemEjector,
-            "A balancer needs an ItemEjector component"
-        );
-        const ejector = payload.entity.components.ItemEjector;
-        const processor = payload.entity.components.ItemProcessor;
-        const availableSlots = ejector.slots.length;
+        const components = payload && payload.entity && payload.entity.components;
+        const ejector = components && components.ItemEjector;
+        const processor = components && components.ItemProcessor;
+        const items = payload && payload.items;
+        const outItems = payload && payload.outItems;
+        const availableSlots = ejector && Array.isArray(ejector.slots)
+            ? ejector.slots.length
+            : 0;
+
+        // A variant can briefly be rebuilt while the placement preview is
+        // changing. Do not let an incomplete preview produce a modulo-by-zero
+        // slot or throw from the processor system.
+        if (!processor || !items || !outItems || availableSlots === 0) return false;
+
         for (let index = 0; index < config.ways; ++index) {
-            const item = payload.items.get(index);
+            const item = typeof items.get === "function" ? items.get(index) : null;
             if (!item) continue;
-            payload.outItems.push({
+            outItems.push({
                 item,
                 preferredSlot: processor.nextOutputSlot++ % availableSlots,
                 doNotTrack: true,
@@ -54,19 +61,34 @@ function makeSlots(count, direction) {
 }
 
 function updateWideBalancer(entity, config) {
-    entity.components.ItemAcceptor.setSlots(
+    const components = entity && entity.components;
+    if (!components) return false;
+
+    const acceptor = components.ItemAcceptor;
+    const processor = components.ItemProcessor;
+    const ejector = components.ItemEjector;
+    const underlays = components.BeltUnderlays;
+    if (!acceptor || !processor || !ejector || !underlays) return false;
+
+    // The preview entity may be switched several times in a single frame.
+    // Clear transient processing state before changing the slot topology so
+    // queued outputs from the previous width cannot target stale slots.
+    if (typeof processor.clear === "function") processor.clear();
+
+    acceptor.setSlots(
         makeSlots(config.ways, shapez.enumDirection.bottom)
     );
-    entity.components.ItemProcessor.type = shapez.enumItemProcessorTypes[config.id];
-    entity.components.ItemProcessor.inputsPerCharge = 1;
-    entity.components.ItemProcessor.processingRequirement = null;
-    entity.components.ItemEjector.setSlots(
+    processor.type = shapez.enumItemProcessorTypes[config.id];
+    processor.inputsPerCharge = 1;
+    processor.processingRequirement = null;
+    ejector.setSlots(
         makeSlots(config.ways, shapez.enumDirection.top)
     );
-    entity.components.BeltUnderlays.underlays = makeSlots(
+    underlays.underlays = makeSlots(
         config.ways,
         shapez.enumDirection.top
     );
+    return true;
 }
 
 class Mod extends shapez.Mod {
@@ -89,7 +111,7 @@ class Mod extends shapez.Mod {
                 isUnlocked: () => true,
             });
             this.modInterface.registerBuildingTranslation(metaBalancer, config.variant, {
-                language: "zh",
+                language: "zh-CN",
                 name: config.nameZh,
                 description: config.ways + " 路输入/输出的平衡器变形体。",
             });

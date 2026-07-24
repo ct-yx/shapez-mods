@@ -3,7 +3,7 @@ const METADATA = {
     website: "https://github.com/ct-yx/shapez-mods",
     author: "ct-yx & Codex",
     name: "Key Reform",
-    version: "1.1.1",
+    version: "1.1.2",
     id: "key-reform-ctyx",
     description: "Adds configurable T+number and T/R mouse-wheel shortcuts for every building variant.",
     minimumGameVersion: ">=1.5.0",
@@ -256,14 +256,29 @@ class Mod extends shapez.Mod {
             inputReceiver.keydown.addToTop(event => this.onKeyDown(root, event));
         }
 
-        if (root.canvas && root.canvas.addEventListener) {
-            const wheelHandler = event => this.onWheel(root, event);
-            root.__keyReformWheelHandler_111 = wheelHandler;
-            root.canvas.addEventListener("wheel", wheelHandler, {
+        const wheelHandler = event => this.onWheel(root, event);
+        root.__keyReformWheelHandler_112 = wheelHandler;
+
+        // Camera zoom is handled by a canvas/game input listener. Register at
+        // the window capture phase so T/R gets first refusal, rather than
+        // trying to cancel zoom after the canvas listener already ran.
+        const targets = [];
+        if (typeof window !== "undefined" && window.addEventListener) {
+            targets.push(window);
+        }
+        if (typeof document !== "undefined" && document.addEventListener) {
+            targets.push(document);
+        }
+        if (targets.length === 0 && root.canvas && root.canvas.addEventListener) {
+            targets.push(root.canvas);
+        }
+        for (const target of targets) {
+            target.addEventListener("wheel", wheelHandler, {
                 capture: true,
                 passive: false,
             });
         }
+        root.__keyReformWheelTargets_112 = targets;
     }
 
     isKeyDown(root, keyCode) {
@@ -351,11 +366,18 @@ class Mod extends shapez.Mod {
         const holdingR = this.isKeyDown(root, KEY_R);
         if (!holdingT && !holdingR) return;
 
+        // Cancel map zoom even when no building is currently selected. This
+        // is deliberately before getPlacer(): holding T/R reserves the wheel
+        // gesture for this mod for the whole game view.
+        if (typeof event.preventDefault === "function") event.preventDefault();
+        if (typeof event.stopImmediatePropagation === "function") {
+            event.stopImmediatePropagation();
+        } else if (typeof event.stopPropagation === "function") {
+            event.stopPropagation();
+        }
+
         const placer = this.getPlacer(root);
         if (!placer) return;
-
-        event.preventDefault();
-        event.stopImmediatePropagation();
         const variants = this.getAvailableVariants(placer);
         const direction = event.deltaY < 0 ? 1 : -1;
         if (holdingT) {

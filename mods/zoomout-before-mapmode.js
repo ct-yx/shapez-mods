@@ -3,7 +3,7 @@ const METADATA = {
     website: "https://github.com/ct-yx/shapez-mods",
     author: "ct-yx & Codex",
     name: "Zoom out before Mapmode",
-    version: "1.5.0",
+    version: "1.5.1",
     id: "zoomout-mapmode",
     description: "Changes map mode zoom and reduces belt item rendering at low camera zoom.",
     minimumGameVersion: ">=1.5.0",
@@ -102,11 +102,11 @@ class Mod extends shapez.Mod {
                     type: "number",
                     label: { en: "Pre-map-mode zoom-out range", zh: "进入地图总览前的缩小范围" },
                     description: {
-                        en: "Multiplier relative to vanilla (1x). Higher values let you zoom out farther before map mode; 4x is the maximum.",
-                        zh: "相对于原版的倍数（1x）。数值越大，进入地图总览前可以缩得更远；最高 4x。",
+                        en: "Multiplier relative to vanilla (1x). Higher values let you zoom out farther before map mode; 8x is the maximum.",
+                        zh: "相对于原版的倍数（1x）。数值越大，进入地图总览前可以缩得更远；最高 8x。",
                     },
                     min: 1,
-                    max: 4,
+                    max: 8,
                     step: 0.05,
                     default: mapPreviewRangeDefault,
                     onChange: value => this.applyMapPreviewRange(value),
@@ -390,6 +390,6 @@ class Mod extends shapez.Mod {
     normalizeMapPreviewRangeMultiplier(value, fallback = 1) {
         const parsed = Number(value);
         if (!Number.isFinite(parsed)) return fallback;
-        return Math.max(1, Math.min(4, parsed));
+        return Math.max(1, Math.min(8, parsed));
     }
 }

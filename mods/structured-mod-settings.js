@@ -25,6 +25,7 @@ class StructuredSettingsRegistry {
     constructor(mod) {
         this.mod = mod;
         this.definitions = new Map();
+        this.expandedDefinitions = new Set();
         this.locale = this.detectLocale();
         this.nativeSettingsPatched = false;
         this.domObserver = null;
@@ -199,7 +200,9 @@ class StructuredSettingsRegistry {
     }
 
     unregister(modId) {
-        const removed = this.definitions.delete(String(modId));
+        const id = String(modId);
+        const removed = this.definitions.delete(id);
+        this.expandedDefinitions.delete(id);
         if (removed) this.refreshNativeSettings();
         return removed;
     }
@@ -484,9 +487,16 @@ class StructuredSettingsRegistry {
             return `<div class="row sms-field-row"><div class="sms-field-copy"><label>${label}</label>${description}</div><div class="sms-field-control">${control}</div></div>`;
         }).join("");
 
-        const description = definition.description ? `<div class="desc sms-definition-description">${this.escape(definition.description)}</div>` : "";
-        return `<div class="setting cardbox sms-definition">
-                    <div class="sms-definition-header row"><div class="sms-definition-copy"><label>${this.escape(definition.title)}</label>${description}</div><button type="button" class="styledButton sms-reset" data-sms-reset="${this.escape(definition.id)}">${this.locale === "zh" ? "恢复默认" : "Reset"}</button></div>
+        const expanded = this.expandedDefinitions.has(definition.id);
+        const description = definition.description ? `<span class="desc sms-definition-description">${this.escape(definition.description)}</span>` : "";
+        return `<div class="setting cardbox sms-definition${expanded ? " is-expanded" : ""}" data-sms-definition="${this.escape(definition.id)}">
+                    <div class="sms-definition-header row">
+                        <button type="button" class="sms-definition-toggle" data-sms-toggle="${this.escape(definition.id)}" aria-expanded="${expanded ? "true" : "false"}">
+                            <span class="sms-definition-chevron" aria-hidden="true">▸</span>
+                            <span class="sms-definition-copy"><span class="sms-definition-title">${this.escape(definition.title)}</span>${description}</span>
+                        </button>
+                        <button type="button" class="styledButton sms-reset" data-sms-reset="${this.escape(definition.id)}">${this.locale === "zh" ? "恢复默认" : "Reset"}</button>
+                    </div>
                     <div class="sms-definition-fields">${fields}</div>
                 </div>`;
     }
@@ -520,6 +530,9 @@ class StructuredSettingsRegistry {
         for (const button of category.querySelectorAll("[data-sms-reset]")) {
             button.addEventListener("click", () => this.reset(button.dataset.smsReset));
         }
+        for (const button of category.querySelectorAll("[data-sms-toggle]")) {
+            button.addEventListener("click", () => this.toggleDefinition(button));
+        }
         const manager = category.querySelector("[data-sms-open-manager]");
         if (manager) {
             manager.addEventListener("click", () => {
@@ -531,6 +544,20 @@ class StructuredSettingsRegistry {
     getFieldFromControl(control) {
         const definition = this.getDefinition(control.dataset.smsMod);
         return definition && definition.fields.find(field => field.id === control.dataset.smsField);
+    }
+
+    toggleDefinition(button) {
+        if (!button) return;
+        const modId = String(button.dataset.smsToggle || "");
+        if (!modId) return;
+
+        const card = button.closest(".sms-definition");
+        const willExpand = !card || !card.classList.contains("is-expanded");
+        if (willExpand) this.expandedDefinitions.add(modId);
+        else this.expandedDefinitions.delete(modId);
+
+        if (card) card.classList.toggle("is-expanded", willExpand);
+        button.setAttribute("aria-expanded", willExpand ? "true" : "false");
     }
 
     onControlChanged(control, persist) {
@@ -658,7 +685,7 @@ class StructuredSettingsRegistry {
                 flex-direction: column;
             }
             #state_SettingsState .sms-category-intro-copy strong,
-            #state_SettingsState .sms-definition-copy > label {
+            #state_SettingsState .sms-definition-copy > .sms-definition-title {
                 text-transform: uppercase;
                 font-size: 1.1em;
             }
@@ -677,11 +704,41 @@ class StructuredSettingsRegistry {
                 grid-template-columns: 1fr auto;
                 margin-bottom: 5px;
             }
+            #state_SettingsState .sms-definition-toggle {
+                display: flex;
+                min-width: 0;
+                padding: 0;
+                border: 0;
+                background: transparent;
+                color: inherit;
+                font: inherit;
+                text-align: left;
+                cursor: pointer;
+            }
+            #state_SettingsState .sms-definition-toggle:focus-visible {
+                outline: 2px solid rgba(84, 174, 230, .6);
+                outline-offset: 3px;
+                border-radius: 4px;
+            }
+            #state_SettingsState .sms-definition-chevron {
+                flex: 0 0 auto;
+                width: 17px;
+                margin-top: 1px;
+                color: #5b9ed5;
+                transition: transform .12s ease;
+            }
+            #state_SettingsState .sms-definition.is-expanded .sms-definition-chevron {
+                transform: rotate(90deg);
+            }
             #state_SettingsState .sms-definition-copy {
                 min-width: 0;
             }
             #state_SettingsState .sms-definition-description {
+                display: block;
                 margin-top: 5px;
+            }
+            #state_SettingsState .sms-definition:not(.is-expanded) .sms-definition-fields {
+                display: none;
             }
             #state_SettingsState .sms-field-row {
                 min-height: 34px;

@@ -3,7 +3,7 @@ const METADATA = {
     website: "https://github.com/ct-yx/shapez-mods",
     author: "ct-yx & Codex",
     name: "Key Reform",
-    version: "1.1.0",
+    version: "1.1.1",
     id: "key-reform-ctyx",
     description: "Adds configurable T+number and T/R mouse-wheel shortcuts for every building variant.",
     minimumGameVersion: ">=1.5.0",
@@ -155,6 +155,7 @@ class Mod extends shapez.Mod {
             label: { en: "Auto / contextual fallback", zh: "自动 / 按当前建筑选择" },
         }];
         const dedupe = new Set([AUTO_VARIANT]);
+        this.detectedVariantOptions.clear();
         const entries = this.getMetaEntries();
 
         for (const meta of entries) {
@@ -174,7 +175,6 @@ class Mod extends shapez.Mod {
                 const variant = combination && combination.variant;
                 if (variant === undefined || variant === null) continue;
                 const variantText = String(variant);
-                if (variantText === "default" || variantText === "defaultBuildingVariant") continue;
                 const value = metaId + TARGET_SEPARATOR + variantText;
                 if (dedupe.has(value)) continue;
                 dedupe.add(value);
@@ -203,6 +203,12 @@ class Mod extends shapez.Mod {
     }
 
     getVariantLabel(meta, metaId, variant) {
+        if (variant === "default" || variant === "defaultBuildingVariant") {
+            return {
+                en: metaId + " / Original",
+                zh: metaId + " / 原版",
+            };
+        }
         try {
             const translations = shapez.T && shapez.T.buildings && shapez.T.buildings[metaId];
             if (translations && translations[variant] && translations[variant].name) {
@@ -241,8 +247,8 @@ class Mod extends shapez.Mod {
     }
 
     installForGame(root) {
-        if (!root || root.__keyReformInstalled_11) return;
-        root.__keyReformInstalled_11 = true;
+        if (!root || root.__keyReformInstalled_111) return;
+        root.__keyReformInstalled_111 = true;
         this.root = root;
 
         const inputReceiver = root.gameState && root.gameState.inputReciever;
@@ -252,7 +258,7 @@ class Mod extends shapez.Mod {
 
         if (root.canvas && root.canvas.addEventListener) {
             const wheelHandler = event => this.onWheel(root, event);
-            root.__keyReformWheelHandler_11 = wheelHandler;
+            root.__keyReformWheelHandler_111 = wheelHandler;
             root.canvas.addEventListener("wheel", wheelHandler, {
                 capture: true,
                 passive: false,

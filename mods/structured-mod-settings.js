@@ -4,7 +4,7 @@ const METADATA = {
     author: "ct-yx & Codex",
     name: "Structured Mod Settings UI",
     // Keep the persisted filename stable while the UI implementation evolves.
-    version: "1.0.0",
+    version: "1.0.1",
     id: "structured-mod-settings-ui",
     description: "Adds a native Game Mods (MODS) settings category for other mods.",
     minimumGameVersion: ">=1.5.0",
@@ -18,7 +18,7 @@ const METADATA = {
 };
 
 const API_NAME = "ShapezStructuredSettings";
-const API_VERSION = "1.1.0";
+const API_VERSION = "1.1.1";
 const SETTINGS_CATEGORY_ID = "structured-mod-settings";
 
 class StructuredSettingsRegistry {
@@ -29,6 +29,7 @@ class StructuredSettingsRegistry {
         this.locale = this.detectLocale();
         this.nativeSettingsPatched = false;
         this.domObserver = null;
+        this.reloadRequested = false;
     }
 
     init() {
@@ -450,9 +451,14 @@ class StructuredSettingsRegistry {
                             <strong>${this.locale === "zh" ? "模组设置" : "Mod Settings"}</strong>
                             <span>${this.locale === "zh" ? "由已安装的模组提供的设置集中显示在这里。" : "Settings provided by installed mods are shown here."}</span>
                         </div>
-                        <button type="button" class="styledButton sms-open-manager" data-sms-open-manager="1">
-                            ${this.locale === "zh" ? "管理模组" : "Manage Mods"}
-                        </button>
+                        <div class="sms-category-actions">
+                            <button type="button" class="styledButton sms-reload-game" data-sms-reload-game="1">
+                                ${this.locale === "zh" ? "重载游戏" : "Reload Game"}
+                            </button>
+                            <button type="button" class="styledButton sms-open-manager" data-sms-open-manager="1">
+                                ${this.locale === "zh" ? "管理模组" : "Manage Mods"}
+                            </button>
+                        </div>
                     </div>
                     ${body}
                 </div>`;
@@ -533,12 +539,72 @@ class StructuredSettingsRegistry {
         for (const button of category.querySelectorAll("[data-sms-toggle]")) {
             button.addEventListener("click", () => this.toggleDefinition(button));
         }
+        for (const button of category.querySelectorAll("[data-sms-reload-game]")) {
+            button.addEventListener("click", event => {
+                event.preventDefault();
+                this.reloadGame(category, button);
+            });
+        }
         const manager = category.querySelector("[data-sms-open-manager]");
         if (manager) {
             manager.addEventListener("click", () => {
                 if (state && typeof state.moveToStateAddGoBack === "function") state.moveToStateAddGoBack("ModsState");
             });
         }
+    }
+
+    reloadGame(category, button) {
+        if (this.reloadRequested) return false;
+        this.reloadRequested = true;
+
+        // Commit every currently rendered control before the page reloads.
+        // This covers range sliders which have only received an input event
+        // and makes the button safe to use immediately after changing a value.
+        if (category && typeof category.querySelectorAll === "function") {
+            for (const control of category.querySelectorAll("[data-sms-control]")) {
+                this.onControlChanged(control, true);
+            }
+        }
+        try {
+            this.mod.saveSettings();
+        } catch (error) {
+            console.warn("Structured Mod Settings: failed to save before reload", error);
+        }
+
+        if (button) {
+            button.disabled = true;
+            button.classList.add("is-reloading");
+            button.textContent = this.locale === "zh" ? "重载中…" : "Reloading…";
+        }
+
+        const performReload = () => {
+            try {
+                // shapez itself uses window.location.reload(true) for an app
+                // restart. In the desktop build this reloads the game renderer
+                // and all filesystem mods while keeping the application window.
+                if (typeof window !== "undefined" && window.location
+                    && typeof window.location.reload === "function") {
+                    window.location.reload(true);
+                    return;
+                }
+            } catch (error) {
+                console.error("Structured Mod Settings: game reload failed", error);
+            }
+            this.reloadRequested = false;
+            if (button) {
+                button.disabled = false;
+                button.classList.remove("is-reloading");
+                button.textContent = this.locale === "zh" ? "重载游戏" : "Reload Game";
+            }
+        };
+
+        // Let click handlers and persistence settle before navigating away.
+        if (typeof window !== "undefined" && typeof window.setTimeout === "function") {
+            window.setTimeout(performReload, 0);
+        } else {
+            performReload();
+        }
+        return true;
     }
 
     getFieldFromControl(control) {
@@ -694,11 +760,22 @@ class StructuredSettingsRegistry {
                 color: #aaadb2;
                 font-size: .85em;
             }
+            #state_SettingsState .sms-category-actions {
+                display: flex;
+                flex: 0 0 auto;
+                align-items: center;
+                gap: 7px;
+            }
             #state_SettingsState .sms-open-manager,
+            #state_SettingsState .sms-reload-game,
             #state_SettingsState .sms-reset {
                 flex: 0 0 auto;
                 padding: 4px 9px;
                 font-size: .78em;
+            }
+            #state_SettingsState .sms-reload-game.is-reloading {
+                cursor: wait;
+                opacity: .72;
             }
             #state_SettingsState .sms-definition-header {
                 grid-template-columns: 1fr auto;

@@ -21,7 +21,7 @@
                 <p class="eyebrow">Community collection · Shapez 1.x</p>
                 <h1>让工厂的<span class="accent">物流、建造与性能测试</span>更顺手。</h1>
                 <p class="lead">一套面向 shapez.io 一代的中文 Mod 整合：高吞吐物流、多向平衡器、原生设置页、快捷建造、地图预览与自适应压力测试。</p>
-                <div class="actions"><a class="button primary" href="downloads/shapez-mods-modpack.zip">下载整合包 · ZIP</a><a class="button" href="https://github.com/ct-yx/shapez-mods">查看源码 ↗</a></div>
+                <div class="actions"><a class="button primary" data-modpack-download href="https://github.com/ct-yx/shapez-mods/releases/tag/modpack-latest"><span data-modpack-label>正在获取最新整合包…</span></a><a class="button" href="https://github.com/ct-yx/shapez-mods">查看源码 ↗</a><p class="download-status" data-modpack-status aria-live="polite">正在通过 GitHub API 查询最新发布包…</p></div>
             </section>
             <div class="stats" aria-label="项目概览"><div class="stat"><strong>9</strong><span>可独立启用的 Mod</span></div><div class="stat"><strong>1.5.0+</strong><span>维护 Mod 的最低游戏版本</span></div><div class="stat"><strong>0</strong><span>构建依赖，复制 JS 即可使用</span></div></div>
         </div>
@@ -59,9 +59,11 @@
 
         <section id="install"><div class="shell">
             <div class="section-heading"><h2>安装只需要三步。</h2><p>整合包内的每个 JS 文件均可以单独复制到游戏的 Mod 目录中。</p></div>
-            <div class="install"><div class="step"><strong>01 · 下载</strong><p>下载 ZIP 整合包，解压后进入其中的 <code>mods/</code> 目录。</p></div><div class="step"><strong>02 · 复制</strong><p>将需要的 <code>.js</code> 文件复制到 shapez.io 的 Mod 目录。macOS 常用路径为 <code>~/Library/Preferences/shapez.io/mods/</code>。</p></div><div class="step"><strong>03 · 启用</strong><p>重启游戏后在 Mod 管理界面启用。需要调参数时，打开「设置 → 游戏模组（MODS）」。</p></div></div>
+            <div class="install"><div class="step"><strong>01 · 获取</strong><p>展示页会通过 GitHub API 查询并下载工作流刚刚打包的最新 ZIP，解压后进入 <code>mods/</code>。</p></div><div class="step"><strong>02 · 复制</strong><p>将需要的 <code>.js</code> 文件复制到 shapez.io 的 Mod 目录。macOS 常用路径为 <code>~/Library/Preferences/shapez.io/mods/</code>。</p></div><div class="step"><strong>03 · 启用</strong><p>重启游戏后在 Mod 管理界面启用。需要调参数时，打开「设置 → 游戏模组（MODS）」。</p></div></div>
         </div></section>
+        <section id="support"><div class="shell support-panel"><div><span class="tag yellow">支持维护</span><h2>喜欢这些 Mod？欢迎支持后续更新。</h2><p>你的支持会用于继续维护兼容性、功能迭代与文档整理。</p></div><div class="support-actions"><a class="button primary" href="https://www.ifdian.net/a/Ct_yx?utm_source=copylink&amp;utm_medium=link" target="_blank" rel="noreferrer">♡ 爱发电赞助 ↗</a><a class="button" href="https://buymeacoffee.com/ctyx" target="_blank" rel="noreferrer">☕ Buy Me a Coffee ↗</a></div></div></section>
     </main>
-    <footer class="site-footer"><div class="shell"><span>shapez.io Mods Collection · maintained by ct-yx &amp; contributors</span><a href="https://github.com/ct-yx/shapez-mods">GitHub Repository ↗</a></div></footer>
+    <footer class="site-footer"><div class="shell"><span>shapez.io Mods Collection · maintained by ct-yx &amp; contributors</span><a href="https://www.ifdian.net/a/Ct_yx?utm_source=copylink&amp;utm_medium=link" target="_blank" rel="noreferrer">爱发电赞助 ↗</a><a href="https://buymeacoffee.com/ctyx" target="_blank" rel="noreferrer">Buy Me a Coffee ↗</a><a href="https://github.com/ct-yx/shapez-mods">GitHub Repository ↗</a></div></footer>
+    <script src="assets/download-latest.js" defer></script>
 </body>
 </html>

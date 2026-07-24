@@ -1,0 +1,68 @@
+name: Build latest modpack
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: modpack-latest
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: Package and publish latest ZIP
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Build modpack ZIP
+        run: |
+          set -euo pipefail
+          mkdir -p dist/shapez-mods/mods
+          cp README.md dist/shapez-mods/README.md
+          cp mods/*.js dist/shapez-mods/mods/
+          cat > dist/shapez-mods/INSTALL.md <<'EOF'
+          # shapez.io Mods Collection — 安装说明
+
+          1. 将 `mods/` 中需要启用的 `.js` 文件复制到 shapez.io 的 Mod 目录。
+          2. macOS 常用目录：`~/Library/Preferences/shapez.io/mods/`
+          3. 重启游戏后，在 Mod 管理界面启用对应 Mod。
+          4. 想配置带设置项的 Mod 时，同时启用 `structured-mod-settings.js`，然后打开「设置 → 游戏模组（MODS）」。
+
+          完整文档与截图：https://ct-yx.github.io/shapez-mods/
+          EOF
+          cat > dist/shapez-mods/MOD-INDEX.md <<'EOF'
+          # Mod 文件列表
+
+          - `structured-mod-settings.js` — 统一的 MODS 设置界面与持久化 API
+          - `belt_speed_10x.js` — 传送带、地下传送带和平衡器速度控制
+          - `balancer-variants.js` — 4 / 5 / 8 / 10 / 16 路平衡器变形体
+          - `key-reform.js` — T/R 组合键与滚轮快捷建造
+          - `zoomout-before-mapmode.js` — 地图总览缩放和低缩放传送带简化渲染
+          - `factory-stress-lab.js` — 模拟倍率控制、压力测试与报告导出
+          - `auto-tunnels@1.0.4.js` — 方向锁定铺带自动地下通道
+          - `extractor_chain.js` — 链式采矿机拖动连续放置
+          - `sandbox.js` — 全解锁、免费蓝图的测试沙盒
+          EOF
+          cd dist
+          zip -qr shapez-mods-modpack.zip shapez-mods
+      - name: Publish latest modpack release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          notes="自动构建自 ${GITHUB_SHA}。展示站通过 GitHub API 获取此发布包。"
+          if gh release view modpack-latest >/dev/null 2>&1; then
+            gh release edit modpack-latest --title "shapez.io Mods · 最新整合包" --notes "$notes" --prerelease
+            gh release upload modpack-latest dist/shapez-mods-modpack.zip --clobber
+          else
+            gh release create modpack-latest dist/shapez-mods-modpack.zip \
+              --title "shapez.io Mods · 最新整合包" \
+              --notes "$notes" \
+              --prerelease \
+              --target "$GITHUB_SHA"
+          fi

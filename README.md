@@ -6,7 +6,7 @@
 [![shapez.io](https://img.shields.io/badge/shapez.io-1.x-48edd2?style=flat-square)](https://shapez.io/)
 [![Mods](https://img.shields.io/badge/Mod-9-ad7cff?style=flat-square)](docs/mods/README.md)
 
-**[在线展示站](https://ct-yx.github.io/shapez-mods/)** · **[下载整合包 ZIP](https://ct-yx.github.io/shapez-mods/downloads/shapez-mods-modpack.zip)** · **[全部 Mod 介绍](docs/mods/README.md)**
+**[前往项目主页](https://ct-yx.github.io/shapez-mods/)** · **[全部 Mod 介绍](docs/mods/README.md)**
 
 本仓库中的 Mod 均为单文件 JavaScript：复制所需文件到游戏的 Mod 目录即可使用，不需要构建工具或第三方依赖。除来源不同的 Auto Tunnels 外，当前维护的 Mod 元数据要求游戏版本 `>=1.5.0`。
 
@@ -28,7 +28,7 @@
 
 ## 安装
 
-1. 下载 [整合包 ZIP](https://ct-yx.github.io/shapez-mods/downloads/shapez-mods-modpack.zip) 并解压。
+1. 前往[项目主页](https://ct-yx.github.io/shapez-mods/)获取由 GitHub 自动构建的最新整合包并解压。
 2. 将需要启用的 `.js` 文件复制到游戏的 Mod 目录。
    - macOS 常用目录：`~/Library/Preferences/shapez.io/mods/`
 3. 重启游戏，在 Mod 管理界面启用对应 Mod。
@@ -86,16 +86,28 @@ shapez-mods/
 │   ├── index.html
 │   ├── mods/
 │   ├── assets/screenshots/
-│   └── downloads/
+│   └── assets/download-latest.js
 ├── reports/               # Factory Stress Lab 报告样本
 └── .github/workflows/     # GitHub Pages 自动部署工作流
 ```
 
 ## 发布展示站
 
-仓库包含 `.github/workflows/pages.yml`。推送到 `main` 后，GitHub Actions 会部署 `docs/` 目录到 GitHub Pages；首次使用时需在仓库 **Settings → Pages** 中把 Source 设为 **GitHub Actions**。
+仓库包含两个自动化工作流：
+
+- `.github/workflows/pages.yml`：推送到 `main` 后部署 `docs/` 到 GitHub Pages。
+- `.github/workflows/modpack-release.yml`：每次推送都会将当前的 `mods/*.js` 实时打包，并更新 `modpack-latest` GitHub Release 资产。展示页通过 GitHub API 读取该资产的最新下载地址，因此 ZIP 不会被提交到仓库。
+
+首次使用时需在仓库 **Settings → Pages** 中把 Source 设为 **GitHub Actions**。
 
 展示地址：<https://ct-yx.github.io/shapez-mods/>
+
+## 支持项目
+
+如果这些 Mod 对你的工厂有帮助，欢迎通过以下方式支持持续维护：
+
+- [爱发电赞助](https://www.ifdian.net/a/Ct_yx?utm_source=copylink&utm_medium=link)
+- [Buy Me a Coffee](https://buymeacoffee.com/ctyx)
 
 ## 致谢
 

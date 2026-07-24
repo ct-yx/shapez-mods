@@ -11,6 +11,7 @@ const METADATA = {
     settings: {
         enabled: true,
         multiplier: 10,
+        staticBeltAnimationsAtHighMultiplier: true,
         tunnelRangeMultiplierTier1: 1,
         tunnelRangeMultiplierTier2: 1,
     },
@@ -28,6 +29,8 @@ class Mod extends shapez.Mod {
     init() {
         this.settings.enabled = this.settings.enabled !== false;
         this.settings.multiplier = this.normalizeMultiplier(this.settings.multiplier);
+        this.settings.staticBeltAnimationsAtHighMultiplier =
+            this.settings.staticBeltAnimationsAtHighMultiplier !== false;
         this.settings.tunnelRangeMultiplierTier1 = this.normalizeTunnelRangeMultiplier(
             this.settings.tunnelRangeMultiplierTier1
         );
@@ -39,6 +42,7 @@ class Mod extends shapez.Mod {
 
         this.registerSettingsWhenAvailable();
         this.installSpeedPatches();
+        this.installStaticBeltAnimationPatches();
         this.installTunnelRangeCacheRefreshPatch();
         this.applyTunnelRangeMultipliers(this.getTunnelRangeMultipliers());
         this.installBeltReaderReplacement();
@@ -125,6 +129,23 @@ class Mod extends shapez.Mod {
                     },
                 },
                 {
+                    id: "staticBeltAnimationsAtHighMultiplier",
+                    type: "boolean",
+                    label: {
+                        en: "Freeze belt animation above 4x",
+                        zh: "倍率超过 4x 时静止传送带动画",
+                    },
+                    description: {
+                        en: "Keeps belt and belt-underlay textures on a static frame when the selected belt multiplier is above 4x. Does not change simulation speed or item flow.",
+                        zh: "当传送带倍率高于 4x 时，将传送带及其底层贴图固定在静态帧；不影响模拟速度或物品流动。",
+                    },
+                    default: true,
+                    onChange: value => {
+                        this.settings.staticBeltAnimationsAtHighMultiplier = Boolean(value);
+                        this.saveSettings();
+                    },
+                },
+                {
                     id: "tunnelRangeMultiplierTier1",
                     type: "number",
                     label: { en: "Underground belt range · Tier 1", zh: "一级地下传送带范围" },
@@ -167,6 +188,8 @@ class Mod extends shapez.Mod {
         this.settings.multiplier = this.normalizeMultiplier(
             this.settingsPanel.get("multiplier")
         );
+        this.settings.staticBeltAnimationsAtHighMultiplier =
+            this.settingsPanel.get("staticBeltAnimationsAtHighMultiplier") !== false;
         this.settings.tunnelRangeMultiplierTier1 = this.normalizeTunnelRangeMultiplier(
             this.settingsPanel.get("tunnelRangeMultiplierTier1")
         );
@@ -188,6 +211,17 @@ class Mod extends shapez.Mod {
             : this.settings.multiplier;
         const multiplier = this.normalizeMultiplier(value);
         return multiplier <= 1 ? 1 : multiplier;
+    }
+
+    getStaticBeltAnimationsAtHighMultiplier() {
+        if (this.settingsPanel) {
+            return this.settingsPanel.get("staticBeltAnimationsAtHighMultiplier") !== false;
+        }
+        return this.settings.staticBeltAnimationsAtHighMultiplier !== false;
+    }
+
+    shouldFreezeBeltAnimations() {
+        return this.getStaticBeltAnimationsAtHighMultiplier() && this.getMultiplier() > 4;
     }
 
     getTunnelRangeMultipliers() {
@@ -288,6 +322,52 @@ class Mod extends shapez.Mod {
         });
 
         hubGoals.prototype[marker] = true;
+    }
+
+    installStaticBeltAnimationPatches() {
+        const mod = this;
+        this.installStaticAnimationPatch(shapez.BeltSystem, "__beltSpeedControlStaticBelt_141", mod);
+        this.installStaticAnimationPatch(
+            shapez.BeltUnderlaysSystem,
+            "__beltSpeedControlStaticUnderlay_141",
+            mod
+        );
+    }
+
+    installStaticAnimationPatch(systemClass, marker, mod) {
+        if (
+            !systemClass ||
+            !systemClass.prototype ||
+            typeof systemClass.prototype.drawChunk !== "function" ||
+            systemClass.prototype[marker]
+        ) {
+            return;
+        }
+
+        this.modInterface.replaceMethod(systemClass, "drawChunk", function (oldDrawChunk, args) {
+            if (!mod.shouldFreezeBeltAnimations()) {
+                return oldDrawChunk(args && args[0], args && args[1]);
+            }
+
+            // Both vanilla draw methods derive their belt-sprite animation
+            // frame from root.time.realtimeNow(). Freeze just that synchronous
+            // draw call at frame 0, then immediately restore the clock so
+            // logic, item movement, and every other renderer remain live.
+            const time = this.root && this.root.time;
+            const realtimeNow = time && time.realtimeNow;
+            if (typeof realtimeNow !== "function") {
+                return oldDrawChunk(args && args[0], args && args[1]);
+            }
+
+            time.realtimeNow = () => 0;
+            try {
+                return oldDrawChunk(args && args[0], args && args[1]);
+            } finally {
+                time.realtimeNow = realtimeNow;
+            }
+        });
+
+        systemClass.prototype[marker] = true;
     }
 
     installBeltReaderReplacement() {

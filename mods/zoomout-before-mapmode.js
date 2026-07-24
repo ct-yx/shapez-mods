@@ -3,7 +3,7 @@ const METADATA = {
     website: "https://github.com/ct-yx/shapez-mods",
     author: "ct-yx & Codex",
     name: "Zoom out before Mapmode",
-    version: "1.2.0",
+    version: "1.2.1",
     id: "zoomout-mapmode",
     description: "Changes map mode zoom and reduces belt item rendering at low camera zoom.",
     minimumGameVersion: ">=1.5.0",
@@ -44,6 +44,7 @@ class Mod extends shapez.Mod {
         this.settingsPanel = null;
         this.settingsApi = null;
 
+        this.installMinimumZoomPatch();
         this.registerSettingsWhenAvailable();
         this.installBeltItemRenderingPatch();
 
@@ -56,6 +57,35 @@ class Mod extends shapez.Mod {
     getSettingsApi() {
         return globalThis.ShapezStructuredSettings
             || (typeof shapez !== "undefined" ? shapez.StructuredModSettings : null);
+    }
+
+    installMinimumZoomPatch() {
+        // The vanilla regular mode stops camera zooming out at 0.06. The
+        // settings range already supports a 0.02 map threshold, so without
+        // lowering this floor the largest grid-count values can never be
+        // reached and appear to have no effect.
+        const RegularGameMode = typeof shapez !== "undefined"
+            ? shapez.RegularGameMode
+            : null;
+        if (!RegularGameMode || !RegularGameMode.prototype
+            || typeof RegularGameMode.prototype.getMinimumZoom !== "function"
+            || !this.modInterface || typeof this.modInterface.extendClass !== "function") {
+            return;
+        }
+
+        const marker = "__zoomoutMapmodeMinimumZoom_121";
+        if (RegularGameMode.prototype[marker]) return;
+
+        this.modInterface.extendClass(RegularGameMode, ({ $old }) => ({
+            getMinimumZoom() {
+                const vanillaMinimum = Number($old.getMinimumZoom.call(this));
+                const lowerBound = MIN_ZOOM * 0.5;
+                return Number.isFinite(vanillaMinimum)
+                    ? Math.min(vanillaMinimum, lowerBound)
+                    : lowerBound;
+            },
+        }));
+        RegularGameMode.prototype[marker] = true;
     }
 
     registerSettingsWhenAvailable() {

@@ -21,6 +21,8 @@
 | --- | --- |
 | `mods/belt-speed-10x.js` | 所有等级的普通传送带与地下传送带速度提升 10 倍 |
 | `mods/factory-stress-lab.js` | 无限倍率控制、40 FPS 压力测试、性能曲线与 PNG/网页/文本报告导出；Benchmark 面板支持展开/收起 |
+| `mods/structured-mod-settings.js` | 为其他 mod 提供可复用的结构化设置面板与持久化 API |
+| `mods/zoomout-before-mapmode.js` | 地图总览缩放阈值示例 mod，使用结构化设置面板调节 |
 | `mods/4-way-balancer.js` | 4 向平衡器 |
 | `mods/8-way-balancer.js` | 8 向平衡器 |
 
@@ -113,6 +115,53 @@ Benchmark 页面默认收起，点击 `PRESSURE Benchmark` 标题即可展开或
 - 两者用于多路物流的分流与合流，适合大型工厂和高吞吐量布局。
 - 两个文件保留各自的建筑配置与贴图资源，不依赖 `Factory Stress Lab` 或 `Belt Speed ×10`。
 
+### Structured Mod Settings UI
+
+`structured-mod-settings.js` 是一个可作为前置 mod 使用的设置 UI 库。它会在游戏右上角提供一个默认收起的 `Mod Settings` 面板，其他 mod 可以注册结构化字段：
+
+- 布尔开关
+- 数值滑块与数字输入框
+- 下拉选项
+- 文本输入
+- 分组标题、说明文字和恢复默认按钮
+
+设置会由前置 mod 统一保存，其他 mod 只需要注册定义并读取 API，不需要自己编写面板或实现持久化。
+
+#### 其他 mod 的接入方式
+
+确保 `structured-mod-settings.js` 先加载，然后在其他 mod 的 `init()` 中注册：
+
+```js
+const settingsApi = globalThis.ShapezStructuredSettings;
+const settings = settingsApi && settingsApi.register({
+    id: "my-mod",
+    title: { en: "My Mod", zh: "我的 Mod" },
+    description: { en: "Mod settings", zh: "模组设置" },
+    fields: [
+        {
+            id: "enabled",
+            type: "boolean",
+            label: { en: "Enabled", zh: "启用" },
+            default: true,
+        },
+        {
+            id: "amount",
+            type: "number",
+            label: { en: "Amount", zh: "数量" },
+            min: 0.1,
+            max: 10,
+            step: 0.1,
+            default: 1,
+            onChange: value => applyAmount(value),
+        },
+    ],
+});
+
+const amount = settings ? settings.get("amount") : 1;
+```
+
+完整示例是 `zoomout-before-mapmode.js`：它把地图总览阈值暴露为 `0.1–1.5` 的滑块，数值越小，进入地图总览模式越晚。没有安装前置 mod 时，该示例仍会使用默认值运行。
+
 ## 安装
 
 将需要使用的 `.js` 文件复制到游戏的 mods 目录：
@@ -128,6 +177,7 @@ Benchmark 页面默认收起，点击 `PRESSURE Benchmark` 标题即可展开或
 - **普通建厂**：只启用需要的平衡器 mod。
 - **快速物流测试**：启用 `Belt Speed ×10`。
 - **性能跑分**：启用 `Factory Stress Lab`，选择 Benchmark 时长后运行压力测试。
+- **统一设置**：同时启用 `Structured Mod Settings UI` 和 `Zoom out before Mapmode`，在右上角 `Mod Settings` 面板中调节地图总览阈值。
 - **物流与性能联合测试**：同时启用 `Belt Speed ×10`、平衡器和 `Factory Stress Lab`，对比不同布局的平均倍率与机器压力分数。
 
 ## 文件结构
@@ -139,12 +189,15 @@ shapez-mods/
     ├── 4-way-balancer.js
     ├── 8-way-balancer.js
     ├── belt-speed-10x.js
-    └── factory-stress-lab.js
+    ├── factory-stress-lab.js
+    ├── structured-mod-settings.js
+    └── zoomout-before-mapmode.js
 ```
 
 ## 兼容性与注意事项
 
 - `factory-stress-lab.js` 是当前维护版本，包含 Benchmark 展开按钮修复。
+- `structured-mod-settings.js` 应在使用它的其他 mod 之前加载；在本目录中它会按文件名自然排在 `zoomout-before-mapmode.js` 之前。
 - `belt-speed-10x.js` 只修改传送带基础速度，不改变存档数据。
 - 高模拟倍率可能让游戏逻辑负载明显增加；首次测试建议从 `120 s` 开始。
 - Benchmark 页面默认收起，不运行压力测试时不会持续记录 Benchmark 曲线。

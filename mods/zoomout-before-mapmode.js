@@ -19,6 +19,8 @@ const TILE_SIZE = 32;
 const VANILLA_MAP_PREVIEW_ZOOM_FALLBACK = 0.9;
 const DEFAULT_MAP_PREVIEW_RANGE_MULTIPLIER = 2;
 const DEFAULT_COMPACT_BELT_ZOOM = 0.5;
+const MIN_COMPACT_BELT_ZOOM = 0.3;
+const MAX_COMPACT_BELT_ZOOM = 2;
 const COMPACT_BELT_HOVER_DIAMETER_MULTIPLIER = 2.4;
 const COMPACT_BELT_HOVER_RADIUS_PX = 30;
 const COMPACT_BELT_MERGE_RADIUS_PX = 38;
@@ -40,6 +42,7 @@ class Mod extends shapez.Mod {
 
         this.registerSettingsWhenAvailable();
         this.installBeltItemRenderingPatch();
+        this.installBeltArrowRenderingPatch();
         this.applyMapPreviewRange(this.getMapPreviewRangeMultiplier());
 
         this.signals.stateEntered.add(() => {
@@ -100,6 +103,7 @@ class Mod extends shapez.Mod {
                 {
                     id: "mapPreviewRangeMultiplier",
                     type: "number",
+                    suffix: "x",
                     label: { en: "Pre-map-mode zoom-out range", zh: "进入地图总览前的缩小范围" },
                     description: {
                         en: "Multiplier relative to vanilla (1x). Higher values let you zoom out farther before map mode; 8x is the maximum.",
@@ -133,13 +137,14 @@ class Mod extends shapez.Mod {
                 {
                     id: "compactBeltZoom",
                     type: "number",
-                    label: { en: "Compact belt zoom threshold", zh: "简化传送带物品的缩放阈值" },
+                    suffix: "x",
+                    label: { en: "Simplified belt rendering threshold", zh: "简化传送带渲染阈值" },
                     description: {
-                        en: "At or below this camera scale, only belt endpoints are drawn. Default: " + compactDefault + ".",
-                        zh: "实际镜头缩放到该数值或更低时，仅显示传送带端点物品。默认：" + compactDefault + "。",
+                        en: "Actual camera zoom multiplier. Range: 0.3x–2x. At or below it, only belt endpoint items and static, arrow-free belt bases are drawn. Default: " + compactDefault + "x.",
+                        zh: "实际镜头缩放倍率。范围：0.3x–2x。到达或低于该倍率时，只绘制传送带端点物品和无箭头的静态传送带底图。默认：" + compactDefault + "x。",
                     },
-                    min: 0.1,
-                    max: 1.5,
+                    min: MIN_COMPACT_BELT_ZOOM,
+                    max: MAX_COMPACT_BELT_ZOOM,
                     step: 0.05,
                     default: compactDefault,
                     onChange: value => this.applyCompactBeltZoom(value),
@@ -211,18 +216,76 @@ class Mod extends shapez.Mod {
             });
         }, this);
         prototype.draw = function(parameters) {
-            if (
-                !mod.getCompactBeltItemsEnabled() ||
-                !parameters ||
-                !Number.isFinite(parameters.zoomLevel) ||
-                parameters.zoomLevel >= mod.getCompactBeltZoom()
-            ) {
+            if (!mod.shouldUseCompactBeltRendering(parameters, this.root)) {
                 return originalDraw.call(this, parameters);
             }
             mod.prepareEndpointDrawState(this.root);
             return mod.drawCompactBeltPath(this, parameters);
         };
         prototype[marker] = true;
+    }
+
+    installBeltArrowRenderingPatch() {
+        let BeltSystem = null;
+        try {
+            BeltSystem = typeof shapez !== "undefined" ? shapez.BeltSystem : null;
+        } catch (error) { }
+
+        if (!BeltSystem || !BeltSystem.prototype || typeof BeltSystem.prototype.drawChunk !== "function") {
+            console.warn("Zoom out before Mapmode: BeltSystem draw hook is unavailable");
+            return;
+        }
+
+        const prototype = BeltSystem.prototype;
+        const marker = "__zoomoutMapmodeStaticBelts_13";
+        if (prototype[marker]) return;
+
+        const originalDrawChunk = prototype.drawChunk;
+        const mod = this;
+        prototype.drawChunk = function(parameters, chunk) {
+            if (!mod.shouldUseCompactBeltRendering(parameters, this.root)) {
+                return originalDrawChunk.call(this, parameters, chunk);
+            }
+            return mod.drawCompactBeltChunk(this, parameters, chunk, originalDrawChunk);
+        };
+        prototype[marker] = true;
+    }
+
+    // BeltPath.draw is responsible for the items moving on top of belts. The
+    // arrows themselves come from BeltSystem.drawChunk, which normally picks
+    // a time-based animation frame. In compact mode draw only beltSprites:
+    // they are the base, arrow-free sprites used by the game for static belts.
+    drawCompactBeltChunk(system, parameters, chunk, originalDrawChunk) {
+        const entities = chunk && chunk.containedEntitiesByLayer
+            && chunk.containedEntitiesByLayer.regular;
+        if (!entities || typeof entities.length !== "number" || !system.beltSprites) {
+            return originalDrawChunk.call(system, parameters, chunk);
+        }
+
+        for (let index = 0; index < entities.length; ++index) {
+            const entity = entities[index];
+            const components = entity && entity.components;
+            const belt = components && components.Belt;
+            const staticMapEntity = components && components.StaticMapEntity;
+            if (!belt || !staticMapEntity || typeof staticMapEntity.drawSpriteOnBoundsClipped !== "function") {
+                continue;
+            }
+            const baseSprite = system.beltSprites[belt.direction];
+            if (baseSprite) staticMapEntity.drawSpriteOnBoundsClipped(parameters, baseSprite, 0);
+        }
+    }
+
+    getRenderZoom(parameters, root) {
+        const parameterZoom = parameters && Number(parameters.zoomLevel);
+        if (Number.isFinite(parameterZoom)) return parameterZoom;
+        const cameraZoom = root && root.camera && Number(root.camera.zoomLevel);
+        return Number.isFinite(cameraZoom) ? cameraZoom : NaN;
+    }
+
+    shouldUseCompactBeltRendering(parameters, root) {
+        if (!this.getCompactBeltItemsEnabled()) return false;
+        const zoom = this.getRenderZoom(parameters, root);
+        return Number.isFinite(zoom) && zoom <= this.getCompactBeltZoom();
     }
 
     drawCompactBeltPath(path, parameters) {
@@ -384,7 +447,7 @@ class Mod extends shapez.Mod {
     normalizeZoom(value, fallback = DEFAULT_COMPACT_BELT_ZOOM) {
         const parsed = Number(value);
         if (!Number.isFinite(parsed)) return fallback;
-        return Math.max(0.1, Math.min(1.5, parsed));
+        return Math.max(MIN_COMPACT_BELT_ZOOM, Math.min(MAX_COMPACT_BELT_ZOOM, parsed));
     }
 
     normalizeMapPreviewRangeMultiplier(value, fallback = 1) {

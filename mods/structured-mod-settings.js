@@ -161,6 +161,7 @@ class StructuredSettingsRegistry {
                 step: Number.isFinite(Number(field.step)) && Number(field.step) > 0 ? Number(field.step) : 1,
                 options,
                 placeholder: field.placeholder || "",
+                suffix: field.suffix || "",
                 onChange: typeof field.onChange === "function" ? field.onChange : null,
             });
         }
@@ -478,12 +479,17 @@ class StructuredSettingsRegistry {
             if (field.type === "boolean") {
                 control = `<button type="button" class="value checkbox ${value ? "checked" : ""}" ${common} aria-pressed="${value ? "true" : "false"}"><span class="knob"></span></button>`;
             } else if (field.type === "number") {
+                const suffix = this.text(field.suffix);
+                const suffixHtml = suffix
+                    ? `<span class="sms-number-suffix">${this.escape(suffix)}</span>`
+                    : "";
                 control = `<div class="sms-number-control">
                     <div class="value rangeInputContainer noPressEffect">
-                        <label data-sms-number-label="1">${this.escape(this.formatNumber(value))}</label>
+                        <label data-sms-number-label="1">${this.escape(this.formatFieldNumber(value, field))}</label>
                         <input class="rangeInput" ${common} type="range" min="${field.min}" max="${field.max}" step="${field.step}" value="${this.escape(value)}">
                     </div>
                     <input class="sms-number-input" ${common} type="number" min="${field.min}" max="${field.max}" step="${field.step}" value="${this.escape(value)}">
+                    ${suffixHtml}
                 </div>`;
             } else if (field.type === "select") {
                 control = `<select class="value enum sms-select" ${common}>${field.options.map((option, index) => `<option value="${index}" ${option.value === value ? "selected" : ""}>${this.escape(option.label)}</option>`).join("")}</select>`;
@@ -511,6 +517,11 @@ class StructuredSettingsRegistry {
         const number = Number(value);
         if (!Number.isFinite(number)) return String(value);
         return String(Number(number.toFixed(4)));
+    }
+
+    formatFieldNumber(value, field) {
+        const suffix = this.text(field && field.suffix);
+        return this.formatNumber(value) + suffix;
     }
 
     bindNativeSettings(state) {
@@ -654,7 +665,7 @@ class StructuredSettingsRegistry {
                 }
                 const label = category.querySelector("[data-sms-mod='" + this.escapeAttribute(modId) + "'][data-sms-field='" + this.escapeAttribute(fieldId) + "'][type='range']")
                     && category.querySelector("[data-sms-mod='" + this.escapeAttribute(modId) + "'][data-sms-field='" + this.escapeAttribute(fieldId) + "'][type='range']").closest(".rangeInputContainer").querySelector("[data-sms-number-label]");
-                if (label) label.textContent = this.formatNumber(this.get(modId, fieldId));
+                if (label) label.textContent = this.formatFieldNumber(this.get(modId, fieldId), field);
             }
         }
     }
@@ -863,6 +874,11 @@ class StructuredSettingsRegistry {
             #state_SettingsState .sms-number-input {
                 width: 66px;
                 min-width: 66px;
+            }
+            #state_SettingsState .sms-number-suffix {
+                min-width: 10px;
+                color: #7d808a;
+                font-weight: bold;
             }
             #state_SettingsState .sms-text-input {
                 width: 180px;

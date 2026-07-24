@@ -24,6 +24,7 @@
 | `mods/factory-stress-lab.js` | 无限倍率控制、40 FPS 压力测试、性能曲线与 PNG/网页/文本报告导出；Benchmark 面板支持展开/收起 |
 | `mods/structured-mod-settings.js` | 为其他 mod 提供可复用的结构化设置面板与持久化 API |
 | `mods/zoomout-before-mapmode.js` | 地图总览缩放阈值与低缩放传送带物品简化显示 |
+| `mods/mapmode-preview-zoom.js` | 只扩展地图总览预览的最小缩放，不改变普通建造模式镜头范围 |
 | `mods/balancer-variants.js` | 原版 balancer 的 4/5/8/10/16-way 变形体；不额外占用 toolbar 格子 |
 | `mods/key-reform.js` | `T`/`R` + 数字键和按住 `T`/`R` 滚轮快捷切换 |
 
@@ -185,19 +186,29 @@ const settings = settingsApi && settingsApi.register({
 const amount = settings ? settings.get("amount") : 1;
 ```
 
-完整示例是 `zoomout-before-mapmode.js`：它把地图总览阈值显示为“屏幕横向可见网格数”，并按照当前窗口宽度与每格 `32 px` 自动换算为游戏内部缩放值。范围的内部下限扩展到 `0.02`；网格数越多，进入地图总览模式越晚。没有安装前置 mod 时，该示例仍会使用默认值运行。
+完整示例是 `zoomout-before-mapmode.js`：它把地图预览和普通镜头的缩放范围拆成两个独立设置，并以原版为 `1x` 基准；不会再把窗口宽度换算成网格数。没有安装前置 mod 时，该示例仍会使用默认值运行。
 
 ### Zoom out before Mapmode
 
 除了调整进入地图总览的阈值，这个 mod 还会根据**实际镜头缩放值**优化传送带物品显示：
 
 - 默认实际镜头缩放低于 `0.5` 时，隐藏传送带中间的物品，只保留每条传送带路径首尾的物品图标。
-- 设置页面同样使用横向网格数；当前窗口宽度变化后会重新计算可调范围，内部缩放下限为 `0.02`。
-- 同时下调普通建造模式的镜头最小缩放限制，确保 `0.02` 对应的网格数可以实际到达并生效。
+- “Map preview zoom range” 使用相对原版的倍数：`1x` 是原版，默认 `0.5x` 会让地图预览更晚切换且可缩得更远；最低可调到 `0.02x`。
+- “Normal camera zoom-out range” 单独控制普通建造模式的最小缩放：`1x` 是原版，低于 `1x` 会允许普通镜头继续缩小，也可能扩大可见/世界生成范围；不需要扩大范围时保持 `1x`。
 - 鼠标移到路径起始或结束物品图标附近时，该图标会放大，触发范围已扩大；相邻端点是不同物品时按距离选择最近的一个。
 - 相邻端点是相同物品时会合并为一个放大的视觉组，避免同类图标重复堆叠。
 - 该逻辑读取的是 `camera.zoomLevel`，与 `1x`、`5x`、`100x` 等模拟倍率无关。
-- “设置 → 游戏模组（MODS）→ 地图总览缩放”中可以关闭简化显示，也可以调整地图模式与传送带简化的横向网格数阈值。
+- “设置 → 游戏模组（MODS）→ 地图总览缩放”中可以分别调整地图预览与普通镜头的倍数，也可以关闭简化显示或调整传送带简化的 `0.x` 缩放阈值。
+
+### Mapmode Preview Zoom
+
+`mapmode-preview-zoom.js` 是只扩展地图总览预览的独立版本：
+
+- 只有地图总览已经显示后，才允许继续缩小到默认 `0.02`。
+- 普通建造模式仍保持原版最小缩放 `0.06`，避免因为扩大镜头可视范围而增加世界预加载/生成压力。
+- 在“设置 → 游戏模组（MODS）→ 地图预览缩放”中可以关闭功能或调整地图预览最小缩放值（`0.02–0.06`）。
+- 它与 `zoomout-before-mapmode.js` 相互独立；只需要地图总览阈值时不必启用本 mod。
+- 如果已经使用 `zoomout-before-mapmode.js`，不要同时启用这个独立版本，避免两个 mod 同时修改普通镜头下限。
 
 ## 安装
 
@@ -224,7 +235,8 @@ const amount = settings ? settings.get("amount") : 1;
 - **普通建厂**：只启用需要的 `Balancer Variants`。
 - **快速物流测试**：启用 `Belt Speed Control`，在 MODS 中选择倍率。
 - **性能跑分**：启用 `Factory Stress Lab`，选择 Benchmark 时长后运行压力测试。
-- **统一设置**：同时启用 `Structured Mod Settings UI` 和 `Zoom out before Mapmode`，进入“设置 → 游戏模组（MODS）”后调节地图总览阈值。
+- **地图预览**：额外启用 `Mapmode Preview Zoom`，只扩展地图总览已经打开后的缩放范围。
+- **统一设置**：同时启用 `Structured Mod Settings UI`、`Zoom out before Mapmode` 和（可选的）`Mapmode Preview Zoom`，进入“设置 → 游戏模组（MODS）”调节对应选项。
 - **物流与性能联合测试**：同时启用 `Belt Speed Control`、平衡器和 `Factory Stress Lab`，对比不同布局的平均倍率与机器压力分数。
 
 ## 文件结构
@@ -240,6 +252,7 @@ shapez-mods/
     ├── belt-speed-10x.js
     ├── factory-stress-lab.js
     ├── key-reform.js
+    ├── mapmode-preview-zoom.js
     ├── structured-mod-settings.js
     └── zoomout-before-mapmode.js
 ```
@@ -250,6 +263,7 @@ shapez-mods/
 - `structured-mod-settings.js` 会把设置页面扩展为原生“游戏模组（MODS）”分类；依赖它的 mod 即使加载顺序靠前也会自动等待注册。
 - `belt-speed-10x.js` 只修改运行时速度，不改变存档数据；`1x` 或关闭开关即恢复原版倍率。
 - `balancer-variants.js` 与旧版独立 4/8-way mod 不要同时启用，否则会出现重复的扩展建筑。
+- `mapmode-preview-zoom.js` 只影响地图总览模式；若不需要超远地图预览，可以保持关闭。
 - 高模拟倍率可能让游戏逻辑负载明显增加；首次测试建议从 `120 s` 开始。
 - Benchmark 页面默认收起，不运行压力测试时不会持续记录 Benchmark 曲线。
 - 如果游戏更新后 mod 行为异常，请先确认游戏版本与 `minimumGameVersion`，再重新复制最新文件。

@@ -3,7 +3,7 @@ const METADATA = {
     website: "https://github.com/ct-yx/shapez-mods",
     author: "ct-yx & Codex",
     name: "Key Reform",
-    version: "1.1.2",
+    version: "1.1.3",
     id: "key-reform-ctyx",
     description: "Adds configurable T+number and T/R mouse-wheel shortcuts for every building variant.",
     minimumGameVersion: ">=1.5.0",
@@ -26,6 +26,7 @@ const METADATA = {
 const KEY_T = "T".charCodeAt(0);
 const KEY_R = "R".charCodeAt(0);
 const FIRST_DIGIT = "0".charCodeAt(0);
+const WHEEL_STEP_INTERVAL_MS = 180;
 const AUTO_VARIANT = "__auto__";
 const TARGET_SEPARATOR = "::";
 const DIGITS = Array.from({ length: 10 }, (_, digit) => digit);
@@ -247,21 +248,37 @@ class Mod extends shapez.Mod {
     }
 
     installForGame(root) {
-        if (!root || root.__keyReformInstalled_111) return;
-        root.__keyReformInstalled_111 = true;
+        if (!root || root.__keyReformInstalled_113) return;
+        root.__keyReformInstalled_113 = true;
         this.root = root;
+        root.__keyReformKeyState_113 = {
+            t: false,
+            r: false,
+            lastWheelAt: -Infinity,
+        };
 
         const inputReceiver = root.gameState && root.gameState.inputReciever;
         if (inputReceiver && inputReceiver.keydown) {
-            inputReceiver.keydown.addToTop(event => this.onKeyDown(root, event));
+            inputReceiver.keydown.addToTop(event => {
+                this.updateHeldKey(root, event, true);
+                return this.onKeyDown(root, event);
+            });
+        }
+        if (inputReceiver && inputReceiver.keyup) {
+            inputReceiver.keyup.addToTop(event => {
+                this.updateHeldKey(root, event, false);
+            });
         }
 
         const wheelHandler = event => this.onWheel(root, event);
-        root.__keyReformWheelHandler_112 = wheelHandler;
+        const keydownHandler = event => this.updateHeldKey(root, event, true);
+        const keyupHandler = event => this.updateHeldKey(root, event, false);
+        const blurHandler = () => this.clearHeldKeys(root);
 
-        // Camera zoom is handled by a canvas/game input listener. Register at
-        // the window capture phase so T/R gets first refusal, rather than
-        // trying to cancel zoom after the canvas listener already ran.
+        // Camera zoom is handled by a canvas/game input listener. Register on
+        // every available event target in capture phase. This covers both the
+        // normal canvas event path and browser/game versions which attach the
+        // zoom handler to document or window.
         const targets = [];
         if (typeof window !== "undefined" && window.addEventListener) {
             targets.push(window);
@@ -269,19 +286,74 @@ class Mod extends shapez.Mod {
         if (typeof document !== "undefined" && document.addEventListener) {
             targets.push(document);
         }
-        if (targets.length === 0 && root.canvas && root.canvas.addEventListener) {
+        if (root.canvas && root.canvas.addEventListener) {
             targets.push(root.canvas);
         }
-        for (const target of targets) {
-            target.addEventListener("wheel", wheelHandler, {
-                capture: true,
-                passive: false,
-            });
+        const uniqueTargets = Array.from(new Set(targets));
+        const listenerOptions = { capture: true, passive: false };
+        for (const target of uniqueTargets) {
+            target.addEventListener("keydown", keydownHandler, listenerOptions);
+            target.addEventListener("keyup", keyupHandler, listenerOptions);
+            target.addEventListener("wheel", wheelHandler, listenerOptions);
+            // Older Chromium/Electron builds may still dispatch this alias.
+            target.addEventListener("mousewheel", wheelHandler, listenerOptions);
         }
-        root.__keyReformWheelTargets_112 = targets;
+        if (typeof window !== "undefined" && window.addEventListener) {
+            window.addEventListener("blur", blurHandler, { capture: true });
+        }
+        root.__keyReformWheelHandler_113 = wheelHandler;
+        root.__keyReformListenerTargets_113 = uniqueTargets;
+        root.__keyReformKeyHandlers_113 = { keydownHandler, keyupHandler, blurHandler };
+
+        if (root.signals && root.signals.aboutToDestruct) {
+            root.signals.aboutToDestruct.add(() => {
+                for (const target of uniqueTargets) {
+                    target.removeEventListener("keydown", keydownHandler, listenerOptions);
+                    target.removeEventListener("keyup", keyupHandler, listenerOptions);
+                    target.removeEventListener("wheel", wheelHandler, listenerOptions);
+                    target.removeEventListener("mousewheel", wheelHandler, listenerOptions);
+                }
+                if (typeof window !== "undefined" && window.removeEventListener) {
+                    window.removeEventListener("blur", blurHandler, { capture: true });
+                }
+                this.clearHeldKeys(root);
+            }, this);
+        }
+    }
+
+    getKeyCode(event) {
+        if (!event) return 0;
+        const numericCode = Number(event.keyCode !== undefined ? event.keyCode : event.which);
+        if (Number.isFinite(numericCode) && numericCode > 0) return numericCode;
+        const key = String(event.key || "").toLowerCase();
+        if (key === "t") return KEY_T;
+        if (key === "r") return KEY_R;
+        if (key >= "0" && key <= "9") return FIRST_DIGIT + Number(key);
+        return 0;
+    }
+
+    updateHeldKey(root, event, isDown) {
+        const keyCode = this.getKeyCode(event);
+        const state = root && root.__keyReformKeyState_113;
+        if (!state) return;
+        if (keyCode === KEY_T) state.t = isDown;
+        if (keyCode === KEY_R) state.r = isDown;
+        if (!state.t && !state.r) state.lastWheelAt = -Infinity;
+    }
+
+    clearHeldKeys(root) {
+        const state = root && root.__keyReformKeyState_113;
+        if (!state) return;
+        state.t = false;
+        state.r = false;
+        state.lastWheelAt = -Infinity;
     }
 
     isKeyDown(root, keyCode) {
+        const state = root && root.__keyReformKeyState_113;
+        if (state && ((keyCode === KEY_T && state.t) || (keyCode === KEY_R && state.r))) {
+            return true;
+        }
         const inputManager = root && root.app && root.app.inputMgr;
         return Boolean(inputManager && inputManager.keysDown && inputManager.keysDown.has(keyCode));
     }
@@ -305,9 +377,10 @@ class Mod extends shapez.Mod {
     }
 
     onKeyDown(root, event) {
-        if (!this.isEnabled() || !event || event.keyCode < 48 || event.keyCode > 57) return;
+        const keyCode = this.getKeyCode(event);
+        if (!this.isEnabled() || !event || keyCode < 48 || keyCode > 57) return;
 
-        const digit = event.keyCode - FIRST_DIGIT;
+        const digit = keyCode - FIRST_DIGIT;
         const placer = this.getPlacer(root);
         if (!placer) return;
 
@@ -361,25 +434,34 @@ class Mod extends shapez.Mod {
     }
 
     onWheel(root, event) {
-        if (!this.isEnabled() || !event || !event.deltaY) return;
+        if (!this.isEnabled() || !event) return;
         const holdingT = this.isKeyDown(root, KEY_T);
         const holdingR = this.isKeyDown(root, KEY_R);
         if (!holdingT && !holdingR) return;
 
-        // Cancel map zoom even when no building is currently selected. This
-        // is deliberately before getPlacer(): holding T/R reserves the wheel
-        // gesture for this mod for the whole game view.
+        // Cancel every wheel event before checking the placer or throttle.
+        // Otherwise a wheel burst can still reach the camera zoom handler
+        // while T/R is held, especially when the game receives tiny deltas.
         if (typeof event.preventDefault === "function") event.preventDefault();
         if (typeof event.stopImmediatePropagation === "function") {
             event.stopImmediatePropagation();
         } else if (typeof event.stopPropagation === "function") {
             event.stopPropagation();
         }
+        try {
+            event.returnValue = false;
+            event.cancelBubble = true;
+        } catch (error) { }
 
+        const wheelDelta = this.getWheelDelta(event);
+        if (!wheelDelta) return;
+        const state = root.__keyReformKeyState_113;
+        const now = this.getNow();
+        if (state && now - state.lastWheelAt < WHEEL_STEP_INTERVAL_MS) return;
         const placer = this.getPlacer(root);
         if (!placer) return;
         const variants = this.getAvailableVariants(placer);
-        const direction = event.deltaY < 0 ? 1 : -1;
+        const direction = wheelDelta < 0 ? 1 : -1;
         if (holdingT) {
             // This is intentionally generic: every building's own available
             // variant list is used, including variants added by other mods.
@@ -391,5 +473,29 @@ class Mod extends shapez.Mod {
         } else if (holdingR) {
             this.setRotation(placer, (placer.currentBaseRotation + direction * 90 + 360) % 360);
         }
+        if (state) state.lastWheelAt = now;
+    }
+
+    getWheelDelta(event) {
+        if (!event) return 0;
+        if (Number.isFinite(Number(event.deltaY)) && Number(event.deltaY) !== 0) {
+            return Number(event.deltaY);
+        }
+        if (Number.isFinite(Number(event.wheelDelta)) && Number(event.wheelDelta) !== 0) {
+            return -Number(event.wheelDelta);
+        }
+        if (Number.isFinite(Number(event.detail)) && Number(event.detail) !== 0) {
+            return Number(event.detail);
+        }
+        return 0;
+    }
+
+    getNow() {
+        try {
+            if (typeof performance !== "undefined" && typeof performance.now === "function") {
+                return performance.now();
+            }
+        } catch (error) { }
+        return Date.now();
     }
 }

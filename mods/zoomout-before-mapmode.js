@@ -3,41 +3,41 @@ const METADATA = {
     website: "https://github.com/ct-yx/shapez-mods",
     author: "ct-yx & Codex",
     name: "Zoom out before Mapmode",
-    version: "1.2.1",
+    version: "1.4.0",
     id: "zoomout-mapmode",
     description: "Changes map mode zoom and reduces belt item rendering at low camera zoom.",
     minimumGameVersion: ">=1.5.0",
     doesNotAffectSavegame: true,
     settings: {
-        // These are stored as the number of horizontal world tiles visible
-        // at the threshold. The legacy zoom keys are read and migrated below.
-        // 0 means "calculate the default from the current window width".
-        overviewGridCount: 0,
+        mapPreviewZoomMultiplier: 0.5,
+        normalCameraZoomMultiplier: 1,
         compactBeltItems: true,
-        compactBeltGridCount: 0,
+        compactBeltZoom: 0.5,
     },
 };
 
 const TILE_SIZE = 32;
-const MIN_ZOOM = 0.02;
-const MAX_ZOOM = 1.5;
-const DEFAULT_OVERVIEW_ZOOM = 0.5;
+const VANILLA_MAP_PREVIEW_ZOOM_FALLBACK = 0.9;
+const DEFAULT_MAP_PREVIEW_MULTIPLIER = 0.5;
+const DEFAULT_NORMAL_CAMERA_MULTIPLIER = 1;
 const DEFAULT_COMPACT_BELT_ZOOM = 0.5;
 const COMPACT_BELT_HOVER_DIAMETER_MULTIPLIER = 2.4;
 const COMPACT_BELT_HOVER_RADIUS_PX = 30;
 const COMPACT_BELT_MERGE_RADIUS_PX = 38;
-const DEFAULT_GRID_COUNT_FALLBACK = 120;
 
 class Mod extends shapez.Mod {
     init() {
-        this.settings.overviewGridCount = this.migrateGridCount(
-            this.settings.overviewGridCount,
-            this.settings.overviewZoom,
-            DEFAULT_OVERVIEW_ZOOM
+        this.mapPreviewVanillaZoom = this.getVanillaMapPreviewZoom();
+        this.settings.mapPreviewZoomMultiplier = this.normalizeMultiplier(
+            this.settings.mapPreviewZoomMultiplier,
+            DEFAULT_MAP_PREVIEW_MULTIPLIER
+        );
+        this.settings.normalCameraZoomMultiplier = this.normalizeMultiplier(
+            this.settings.normalCameraZoomMultiplier,
+            DEFAULT_NORMAL_CAMERA_MULTIPLIER
         );
         this.settings.compactBeltItems = this.settings.compactBeltItems !== false;
-        this.settings.compactBeltGridCount = this.migrateGridCount(
-            this.settings.compactBeltGridCount,
+        this.settings.compactBeltZoom = this.normalizeZoom(
             this.settings.compactBeltZoom,
             DEFAULT_COMPACT_BELT_ZOOM
         );
@@ -47,45 +47,25 @@ class Mod extends shapez.Mod {
         this.installMinimumZoomPatch();
         this.registerSettingsWhenAvailable();
         this.installBeltItemRenderingPatch();
+        this.applyMapPreviewZoom(this.getMapPreviewMultiplier());
 
         this.signals.stateEntered.add(() => {
             this.registerSettingsWhenAvailable();
-            this.applyZoom(this.getZoomValue());
+            this.applyMapPreviewZoom(this.getMapPreviewMultiplier());
         });
+    }
+
+    getVanillaMapPreviewZoom() {
+        try {
+            const value = Number(shapez.globalConfig.mapChunkOverviewMinZoom);
+            if (Number.isFinite(value) && value > 0) return value;
+        } catch (error) { }
+        return VANILLA_MAP_PREVIEW_ZOOM_FALLBACK;
     }
 
     getSettingsApi() {
         return globalThis.ShapezStructuredSettings
             || (typeof shapez !== "undefined" ? shapez.StructuredModSettings : null);
-    }
-
-    installMinimumZoomPatch() {
-        // The vanilla regular mode stops camera zooming out at 0.06. The
-        // settings range already supports a 0.02 map threshold, so without
-        // lowering this floor the largest grid-count values can never be
-        // reached and appear to have no effect.
-        const RegularGameMode = typeof shapez !== "undefined"
-            ? shapez.RegularGameMode
-            : null;
-        if (!RegularGameMode || !RegularGameMode.prototype
-            || typeof RegularGameMode.prototype.getMinimumZoom !== "function"
-            || !this.modInterface || typeof this.modInterface.extendClass !== "function") {
-            return;
-        }
-
-        const marker = "__zoomoutMapmodeMinimumZoom_121";
-        if (RegularGameMode.prototype[marker]) return;
-
-        this.modInterface.extendClass(RegularGameMode, ({ $old }) => ({
-            getMinimumZoom() {
-                const vanillaMinimum = Number($old.getMinimumZoom.call(this));
-                const lowerBound = MIN_ZOOM * 0.5;
-                return Number.isFinite(vanillaMinimum)
-                    ? Math.min(vanillaMinimum, lowerBound)
-                    : lowerBound;
-            },
-        }));
-        RegularGameMode.prototype[marker] = true;
     }
 
     registerSettingsWhenAvailable() {
@@ -110,153 +90,124 @@ class Mod extends shapez.Mod {
 
     registerStructuredSettings(settingsApi) {
         this.settingsApi = settingsApi;
-        const overviewDefault = this.normalizeGridCount(
-            this.settings.overviewGridCount,
-            DEFAULT_OVERVIEW_ZOOM
+        const mapPreviewDefault = this.normalizeMultiplier(
+            this.settings.mapPreviewZoomMultiplier,
+            DEFAULT_MAP_PREVIEW_MULTIPLIER
         );
-        const compactDefault = this.normalizeGridCount(
-            this.settings.compactBeltGridCount,
-            DEFAULT_COMPACT_BELT_ZOOM
+        const normalCameraDefault = this.normalizeMultiplier(
+            this.settings.normalCameraZoomMultiplier,
+            DEFAULT_NORMAL_CAMERA_MULTIPLIER
         );
-        const range = this.getGridCountRange();
-        const width = this.getEnvironmentWidth();
+        const compactDefault = this.normalizeZoom(this.settings.compactBeltZoom);
 
         this.settingsPanel = settingsApi.register({
-                id: METADATA.id,
-                title: { en: "Zoom out before Mapmode", zh: "地图总览缩放" },
-                description: {
-                    en: "Use the number of horizontal grids visible on your screen instead of an abstract zoom value.",
-                    zh: "使用屏幕横向可显示的网格数，而不是不直观的缩放小数值。",
+            id: METADATA.id,
+            title: { en: "Zoom out before Mapmode", zh: "地图总览缩放" },
+            description: {
+                en: "Separate map-preview and normal-camera zoom ranges. Both controls use vanilla as 1x.",
+                zh: "分别设置地图预览和普通镜头的缩小范围；两个设置都以原版为 1x。",
+            },
+            fields: [
+                {
+                    id: "mapPreviewZoomMultiplier",
+                    type: "number",
+                    label: { en: "Map preview zoom range", zh: "地图预览缩放范围" },
+                    description: {
+                        en: "Multiplier relative to vanilla (1x). Lower values let the map preview zoom out farther and switch later.",
+                        zh: "相对于原版的倍数（1x）。数值越小，地图预览可以缩得更远，切换也更晚。",
+                    },
+                    min: 0.02,
+                    max: 2,
+                    step: 0.01,
+                    default: mapPreviewDefault,
+                    onChange: value => this.applyMapPreviewZoom(value),
                 },
-                fields: [
-                    {
-                        id: "overviewGridCount",
-                        type: "number",
-                        label: { en: "Horizontal grids before Map mode", zh: "进入地图总览前的横向网格数" },
-                        description: {
-                            en: "Current width: " + width + " px. More grids switch later; the upper limit corresponds to zoom 0.02.",
-                            zh: "当前窗口宽度：" + width + " px。网格数越多，进入总览越晚；上限对应缩放值 0.02。",
-                        },
-                        min: range.min,
-                        max: range.max,
-                        step: 1,
-                        default: overviewDefault,
-                        onChange: value => this.applyGridCount(value),
+                {
+                    id: "normalCameraZoomMultiplier",
+                    type: "number",
+                    label: { en: "Normal camera zoom-out range", zh: "普通镜头缩小范围" },
+                    description: {
+                        en: "Multiplier relative to vanilla (1x). Lower values allow the normal camera to zoom out farther and may increase the visible/generated area.",
+                        zh: "相对于原版的倍数（1x）。数值越小，普通镜头可以缩得更远，也可能增加可见/生成区域。",
                     },
-                    {
-                        id: "restoreDefault",
-                        type: "heading",
-                        label: { en: "More grids = later · fewer grids = earlier", zh: "网格数越多 = 更晚 · 网格数越少 = 更早" },
+                    min: 0.1,
+                    max: 2,
+                    step: 0.01,
+                    default: normalCameraDefault,
+                    onChange: value => this.applyNormalCameraZoomMultiplier(value),
+                },
+                {
+                    id: "zoomHelp",
+                    type: "heading",
+                    label: { en: "1x = vanilla · lower = farther out", zh: "1x = 原版 · 越小 = 缩得更远" },
+                },
+                {
+                    id: "compactBeltItems",
+                    type: "boolean",
+                    label: { en: "Compact belt items at low zoom", zh: "低缩放时简化传送带物品" },
+                    description: {
+                        en: "Below the actual camera zoom threshold, only the first and last belt items are shown.",
+                        zh: "低于实际镜头缩放阈值时，只显示传送带路径首尾的物品。",
                     },
-                    {
-                        id: "compactBeltItems",
-                        type: "boolean",
-                        label: { en: "Compact belt items at low zoom", zh: "低缩放时简化传送带物品" },
-                        description: {
-                            en: "Below the actual camera zoom threshold, only the first and last belt items are shown.",
-                            zh: "低于实际镜头缩放阈值时，只显示传送带路径首尾的物品。",
-                        },
-                        default: true,
-                        onChange: value => {
-                            this.settings.compactBeltItems = Boolean(value);
-                            this.saveSettings();
-                        },
+                    default: true,
+                    onChange: value => {
+                        this.settings.compactBeltItems = Boolean(value);
+                        this.saveSettings();
                     },
-                    {
-                        id: "compactBeltGridCount",
-                        type: "number",
-                        label: { en: "Horizontal grids for compact belts", zh: "简化传送带时的横向网格数" },
-                        description: {
-                            en: "At or below this camera scale, only belt endpoints are drawn. Default: " + compactDefault + " grids.",
-                            zh: "实际镜头缩放到该网格数或更远时，仅显示传送带端点。默认：" + compactDefault + " 格。",
-                        },
-                        min: range.min,
-                        max: range.max,
-                        step: 1,
-                        default: compactDefault,
-                        onChange: value => this.applyCompactBeltGridCount(value),
+                },
+                {
+                    id: "compactBeltZoom",
+                    type: "number",
+                    label: { en: "Compact belt zoom threshold", zh: "简化传送带物品的缩放阈值" },
+                    description: {
+                        en: "At or below this camera scale, only belt endpoints are drawn. Default: " + compactDefault + ".",
+                        zh: "实际镜头缩放到该数值或更低时，仅显示传送带端点物品。默认：" + compactDefault + "。",
                     },
-                ],
-            });
+                    min: 0.1,
+                    max: 1.5,
+                    step: 0.05,
+                    default: compactDefault,
+                    onChange: value => this.applyCompactBeltZoom(value),
+                },
+            ],
+        });
 
-        this.settings.overviewGridCount = this.normalizeGridCount(
-            this.settingsPanel.get("overviewGridCount"),
-            DEFAULT_OVERVIEW_ZOOM
+        this.settings.mapPreviewZoomMultiplier = this.normalizeMultiplier(
+            this.settingsPanel.get("mapPreviewZoomMultiplier"),
+            DEFAULT_MAP_PREVIEW_MULTIPLIER
+        );
+        this.settings.normalCameraZoomMultiplier = this.normalizeMultiplier(
+            this.settingsPanel.get("normalCameraZoomMultiplier"),
+            DEFAULT_NORMAL_CAMERA_MULTIPLIER
         );
         this.settings.compactBeltItems = this.settingsPanel.get("compactBeltItems") !== false;
-        this.settings.compactBeltGridCount = this.normalizeGridCount(
-            this.settingsPanel.get("compactBeltGridCount"),
+        this.settings.compactBeltZoom = this.normalizeZoom(
+            this.settingsPanel.get("compactBeltZoom"),
             DEFAULT_COMPACT_BELT_ZOOM
         );
-        this.applyZoom(this.getZoomValue());
+        this.applyMapPreviewZoom(this.getMapPreviewMultiplier());
     }
 
-    getEnvironmentWidth() {
-        const app = this.app || (this.modLoader && this.modLoader.app);
-        if (app && Number.isFinite(Number(app.screenWidth)) && app.screenWidth > 0) {
-            return Math.max(320, Math.round(app.screenWidth));
+    getMapPreviewMultiplier() {
+        if (this.settingsPanel) {
+            const value = this.settingsPanel.get("mapPreviewZoomMultiplier");
+            if (value !== undefined) return this.normalizeMultiplier(value);
         }
-        try {
-            if (Number.isFinite(Number(window.innerWidth)) && window.innerWidth > 0) {
-                return Math.max(320, Math.round(window.innerWidth));
-            }
-        } catch (error) { }
-        return DEFAULT_GRID_COUNT_FALLBACK * TILE_SIZE * DEFAULT_OVERVIEW_ZOOM;
-    }
-
-    getGridCountRange() {
-        const width = this.getEnvironmentWidth();
-        return {
-            min: Math.max(1, Math.ceil(width / (TILE_SIZE * MAX_ZOOM))),
-            max: Math.max(2, Math.floor(width / (TILE_SIZE * MIN_ZOOM))),
-        };
-    }
-
-    zoomToGridCount(value) {
-        const parsed = Number(value);
-        const zoom = Number.isFinite(parsed) ? Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, parsed)) : DEFAULT_OVERVIEW_ZOOM;
-        return Math.round(this.getEnvironmentWidth() / (TILE_SIZE * zoom));
-    }
-
-    gridCountToZoom(value, fallbackZoom = DEFAULT_OVERVIEW_ZOOM) {
-        const parsed = Number(value);
-        const count = Number.isFinite(parsed) && parsed > 0
-            ? parsed
-            : this.zoomToGridCount(fallbackZoom);
-        return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, this.getEnvironmentWidth() / (TILE_SIZE * count)));
-    }
-
-    normalizeGridCount(value, fallbackZoom = DEFAULT_OVERVIEW_ZOOM) {
-        const range = this.getGridCountRange();
-        const parsed = Number(value);
-        const fallback = this.zoomToGridCount(fallbackZoom);
-        const count = Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-        return Math.max(range.min, Math.min(range.max, Math.round(count)));
-    }
-
-    migrateGridCount(value, legacyZoom, fallbackZoom) {
-        const parsed = Number(value);
-        const legacy = Number(legacyZoom);
-        const metadataDefault = Number(METADATA.settings.overviewGridCount);
-        const usingLegacyDefault = Number.isFinite(legacy)
-            && legacy > 0
-            && Number.isFinite(parsed)
-            && parsed === metadataDefault;
-        if (Number.isFinite(parsed) && parsed > 1 && !usingLegacyDefault) {
-            return this.normalizeGridCount(value, fallbackZoom);
-        }
-        return this.normalizeGridCount(
-            Number.isFinite(legacy) && legacy > 0 ? this.zoomToGridCount(legacy) : undefined,
-            fallbackZoom
+        return this.normalizeMultiplier(
+            this.settings.mapPreviewZoomMultiplier,
+            DEFAULT_MAP_PREVIEW_MULTIPLIER
         );
     }
 
-    getZoomValue() {
+    getNormalCameraZoomMultiplier() {
         if (this.settingsPanel) {
-            const value = this.settingsPanel.get("overviewGridCount");
-            if (value !== undefined) return this.gridCountToZoom(value);
+            const value = this.settingsPanel.get("normalCameraZoomMultiplier");
+            if (value !== undefined) return this.normalizeMultiplier(value);
         }
-        return this.gridCountToZoom(this.settings.overviewGridCount);
+        return this.normalizeMultiplier(
+            this.settings.normalCameraZoomMultiplier,
+            DEFAULT_NORMAL_CAMERA_MULTIPLIER
+        );
     }
 
     getCompactBeltItemsEnabled() {
@@ -269,10 +220,10 @@ class Mod extends shapez.Mod {
 
     getCompactBeltZoom() {
         if (this.settingsPanel) {
-            const value = this.settingsPanel.get("compactBeltGridCount");
-            if (value !== undefined) return this.gridCountToZoom(value, DEFAULT_COMPACT_BELT_ZOOM);
+            const value = this.settingsPanel.get("compactBeltZoom");
+            if (value !== undefined) return this.normalizeZoom(value);
         }
-        return this.gridCountToZoom(this.settings.compactBeltGridCount, DEFAULT_COMPACT_BELT_ZOOM);
+        return this.normalizeZoom(this.settings.compactBeltZoom, DEFAULT_COMPACT_BELT_ZOOM);
     }
 
     installBeltItemRenderingPatch() {
@@ -312,6 +263,32 @@ class Mod extends shapez.Mod {
             return mod.drawCompactBeltPath(this, parameters);
         };
         prototype[marker] = true;
+    }
+
+    installMinimumZoomPatch() {
+        const RegularGameMode = typeof shapez !== "undefined"
+            ? shapez.RegularGameMode
+            : null;
+        if (!RegularGameMode || !RegularGameMode.prototype
+            || typeof RegularGameMode.prototype.getMinimumZoom !== "function"
+            || !this.modInterface || typeof this.modInterface.extendClass !== "function") {
+            return;
+        }
+
+        const marker = "__zoomoutMapmodeMinimumZoom_140";
+        if (RegularGameMode.prototype[marker]) return;
+
+        const mod = this;
+        this.modInterface.extendClass(RegularGameMode, ({ $old }) => ({
+            getMinimumZoom() {
+                const vanillaMinimum = Number($old.getMinimumZoom.call(this));
+                if (!Number.isFinite(vanillaMinimum) || vanillaMinimum <= 0) {
+                    return vanillaMinimum;
+                }
+                return vanillaMinimum * mod.getNormalCameraZoomMultiplier();
+            },
+        }));
+        RegularGameMode.prototype[marker] = true;
     }
 
     drawCompactBeltPath(path, parameters) {
@@ -443,15 +420,23 @@ class Mod extends shapez.Mod {
         return { hovered, merged };
     }
 
-    applyGridCount(value) {
-        const count = this.normalizeGridCount(value, DEFAULT_OVERVIEW_ZOOM);
-        this.settings.overviewGridCount = count;
-        shapez.globalConfig.mapChunkOverviewMinZoom = this.gridCountToZoom(count);
+    applyMapPreviewZoom(value) {
+        const multiplier = this.normalizeMultiplier(value, DEFAULT_MAP_PREVIEW_MULTIPLIER);
+        this.settings.mapPreviewZoomMultiplier = multiplier;
+        shapez.globalConfig.mapChunkOverviewMinZoom = this.mapPreviewVanillaZoom * multiplier;
         if (typeof this.saveSettings === "function") this.saveSettings();
     }
 
-    applyCompactBeltGridCount(value) {
-        this.settings.compactBeltGridCount = this.normalizeGridCount(value, DEFAULT_COMPACT_BELT_ZOOM);
+    applyNormalCameraZoomMultiplier(value) {
+        this.settings.normalCameraZoomMultiplier = this.normalizeMultiplier(
+            value,
+            DEFAULT_NORMAL_CAMERA_MULTIPLIER
+        );
+        if (typeof this.saveSettings === "function") this.saveSettings();
+    }
+
+    applyCompactBeltZoom(value) {
+        this.settings.compactBeltZoom = this.normalizeZoom(value, DEFAULT_COMPACT_BELT_ZOOM);
         if (typeof this.saveSettings === "function") this.saveSettings();
     }
 
@@ -467,8 +452,15 @@ class Mod extends shapez.Mod {
         return dx * dx + dy * dy <= COMPACT_BELT_HOVER_RADIUS_PX * COMPACT_BELT_HOVER_RADIUS_PX;
     }
 
-    applyZoom(value) {
-        const zoom = this.gridCountToZoom(value, DEFAULT_OVERVIEW_ZOOM);
-        shapez.globalConfig.mapChunkOverviewMinZoom = zoom;
+    normalizeZoom(value, fallback = DEFAULT_COMPACT_BELT_ZOOM) {
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed)) return fallback;
+        return Math.max(0.1, Math.min(1.5, parsed));
+    }
+
+    normalizeMultiplier(value, fallback = 1) {
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed)) return fallback;
+        return Math.max(0.02, Math.min(2, parsed));
     }
 }

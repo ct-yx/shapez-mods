@@ -3,60 +3,84 @@ const METADATA = {
     website: "https://github.com/ct-yx/shapez-mods",
     author: "ct-yx & Codex",
     name: "Structured Mod Settings UI",
+    // Keep the persisted filename stable while the UI implementation evolves.
     version: "1.0.0",
     id: "structured-mod-settings-ui",
-    description: "A reusable settings panel for shapez.io mods with persistent structured controls.",
+    description: "Adds a native Game Mods (MODS) settings category for other mods.",
     minimumGameVersion: ">=1.5.0",
     doesNotAffectSavegame: true,
 
-    // This is the library's own persistent storage. Registered mods keep their
-    // values in the values object so they do not need to implement storage.
+    // The official loader persists this object through the mod settings API.
+    // Registered mod values are grouped below values[modId].
     settings: {
-        panelOpen: false,
         values: {},
     },
 };
 
 const API_NAME = "ShapezStructuredSettings";
-const API_VERSION = "1.0.0";
+const API_VERSION = "1.1.0";
+const SETTINGS_CATEGORY_ID = "structured-mod-settings";
 
 class StructuredSettingsRegistry {
     constructor(mod) {
         this.mod = mod;
         this.definitions = new Map();
-        this.root = null;
-        this.panel = null;
         this.locale = this.detectLocale();
-        this.documentKeyHandler = event => {
-            if (event.key === "Escape" && this.mod.settings.panelOpen) {
-                this.setPanelOpen(false);
-            }
-        };
+        this.nativeSettingsPatched = false;
+        this.domObserver = null;
     }
 
     init() {
         if (!this.mod.settings || typeof this.mod.settings !== "object") {
-            this.mod.settings = { panelOpen: false, values: {} };
+            this.mod.settings = { values: {} };
         }
         if (!this.mod.settings.values || typeof this.mod.settings.values !== "object") {
             this.mod.settings.values = {};
         }
-        if (typeof this.mod.settings.panelOpen !== "boolean") {
-            this.mod.settings.panelOpen = false;
-        }
 
         this.mod.modInterface.registerCss(this.getCss());
-        document.addEventListener("keydown", this.documentKeyHandler);
         this.exposeApi();
-        this.mount();
+        this.flushPendingRegistrations();
+        this.patchNativeSettingsState();
 
         this.mod.signals.stateEntered.add(() => {
             this.locale = this.detectLocale();
-            this.mount();
+            this.refreshNativeSettings();
         });
     }
 
+    // Mods are loaded from the filesystem and their order is not guaranteed.
+    // A small queue lets a dependent mod register its panel even when this
+    // library happens to initialize after it.
+    flushPendingRegistrations() {
+        const pending = globalThis.ShapezStructuredSettingsPending;
+        if (!Array.isArray(pending)) return;
+        delete globalThis.ShapezStructuredSettingsPending;
+        for (const callback of pending.splice(0)) {
+            try {
+                if (typeof callback === "function") callback(globalThis.ShapezStructuredSettings);
+            } catch (error) {
+                console.error("Structured Mod Settings pending registration failed", error);
+            }
+        }
+    }
+
     detectLocale() {
+        // App settings are the source of truth once the application has been
+        // created. Mod initialization happens before that, so the DOM/browser
+        // language is used as a small bootstrap fallback.
+        try {
+            const appSettings = this.mod.app && this.mod.app.settings;
+            if (appSettings) {
+                const all = typeof appSettings.getAllSettings === "function"
+                    ? appSettings.getAllSettings()
+                    : appSettings;
+                const language = String(all && all.language || "").toLowerCase();
+                if (language.indexOf("zh") === 0) return "zh";
+                if (language && language !== "auto-detect") return "en";
+            }
+        } catch (error) { }
+
         let candidates = [];
         try {
             candidates.push(document.documentElement && document.documentElement.lang);
@@ -159,15 +183,16 @@ class StructuredSettingsRegistry {
             this.normalizeStoredValue(normalized, field);
         }
         if (!previous) this.mod.saveSettings();
-        this.mount();
-        this.render();
+        this.refreshNativeSettings();
 
         return {
             id: normalized.id,
             get: fieldId => this.get(normalized.id, fieldId),
             set: (fieldId, value) => this.set(normalized.id, fieldId, value),
             getAll: () => this.getAll(normalized.id),
-            open: () => this.setPanelOpen(true),
+            // Kept as a compatibility alias. The UI now lives in the native
+            // SettingsState, so open navigates to its MODS category.
+            open: () => this.openNativeSettings(),
             reset: () => this.reset(normalized.id),
             unregister: () => this.unregister(normalized.id),
         };
@@ -175,7 +200,7 @@ class StructuredSettingsRegistry {
 
     unregister(modId) {
         const removed = this.definitions.delete(String(modId));
-        if (removed) this.render();
+        if (removed) this.refreshNativeSettings();
         return removed;
     }
 
@@ -220,7 +245,6 @@ class StructuredSettingsRegistry {
     getAll(modId) {
         const definition = this.getDefinition(modId);
         if (!definition) return {};
-        const values = this.getValuesBucket(definition.id);
         const result = {};
         for (const field of definition.fields) result[field.id] = this.get(definition.id, field.id);
         return result;
@@ -256,8 +280,8 @@ class StructuredSettingsRegistry {
                 console.error("Structured Mod Settings onChange failed", definition.id, field.id, error);
             }
         }
-        this.mod.saveSettings();
-        if (options.rerender !== false) this.render();
+        if (options.persist !== false) this.mod.saveSettings();
+        if (options.rerender !== false) this.refreshNativeSettings();
         return value;
     }
 
@@ -268,17 +292,17 @@ class StructuredSettingsRegistry {
         for (const field of definition.fields) {
             if (field.type === "heading") continue;
             values[field.id] = this.clone(field.default);
-            if (field.onChange) field.onChange(values[field.id], { modId: definition.id, fieldId: field.id, source: "reset" });
+            if (field.onChange) {
+                try {
+                    field.onChange(values[field.id], { modId: definition.id, fieldId: field.id, source: "reset" });
+                } catch (error) {
+                    console.error("Structured Mod Settings reset failed", definition.id, field.id, error);
+                }
+            }
         }
         this.mod.saveSettings();
-        this.render();
+        this.refreshNativeSettings();
         return true;
-    }
-
-    setPanelOpen(open) {
-        this.mod.settings.panelOpen = Boolean(open);
-        this.mod.saveSettings();
-        this.render();
     }
 
     exposeApi() {
@@ -290,89 +314,234 @@ class StructuredSettingsRegistry {
             set: (modId, fieldId, value) => this.set(modId, fieldId, value),
             getAll: modId => this.getAll(modId),
             reset: modId => this.reset(modId),
-            open: () => this.setPanelOpen(true),
-            close: () => this.setPanelOpen(false),
+            open: () => this.openNativeSettings(),
+            close: () => this.closeNativeSettings(),
         };
         globalThis[API_NAME] = api;
         if (typeof shapez !== "undefined") shapez.StructuredModSettings = api;
     }
 
-    mount() {
-        if (!document.body) return;
-        if (!this.root || !document.body.contains(this.root)) {
-            this.root = document.createElement("div");
-            this.root.id = "sms-root";
-            document.body.appendChild(this.root);
+    patchNativeSettingsState() {
+        let SettingsState = null;
+        try {
+            SettingsState = typeof shapez !== "undefined" ? shapez.SettingsState : null;
+        } catch (error) { }
+
+        if (!SettingsState || !SettingsState.prototype) {
+            this.installDomFallback();
+            return;
         }
-        this.render();
+        const prototype = SettingsState.prototype;
+        const marker = "__structuredModSettingsPatched_11";
+        if (prototype[marker]) {
+            this.nativeSettingsPatched = true;
+            return;
+        }
+
+        const registry = this;
+        const originalMainContent = prototype.getMainContentHTML;
+        const originalSettingsHtml = prototype.getSettingsHtml;
+        const originalInitCategoryButtons = prototype.initCategoryButtons;
+
+        if (typeof originalMainContent === "function") {
+            prototype.getMainContentHTML = function() {
+                let html = originalMainContent.call(this);
+                const button = registry.renderNativeCategoryButtonHtml();
+                // Reuse the vanilla mod-management slot, keeping the sidebar
+                // order identical to the screenshot and leaving management
+                // accessible from the category intro card.
+                const managerButton = /<button class="styledButton categoryButton manageMods">[\s\S]*?<\/button>/;
+                if (managerButton.test(html)) {
+                    html = html.replace(managerButton, button);
+                } else {
+                    html = html.replace(/(<div class="other[^"]*">)/, button + "$1");
+                }
+                return html;
+            };
+        }
+
+        if (typeof originalSettingsHtml === "function") {
+            prototype.getSettingsHtml = function() {
+                return originalSettingsHtml.call(this) + registry.renderNativeCategoryHtml();
+            };
+        }
+
+        if (typeof originalInitCategoryButtons === "function") {
+            prototype.initCategoryButtons = function() {
+                originalInitCategoryButtons.call(this);
+                const button = this.htmlElement.querySelector("[data-category-btn='" + SETTINGS_CATEGORY_ID + "']");
+                if (button) {
+                    registry.trackNativeClick(this, button, () => this.setActiveCategory(SETTINGS_CATEGORY_ID));
+                }
+                registry.bindNativeSettings(this);
+            };
+        }
+
+        prototype[marker] = true;
+        this.nativeSettingsPatched = true;
+        this.refreshNativeSettings();
     }
 
-    render() {
-        if (!this.root) return;
+    trackNativeClick(state, element, callback) {
+        // State click detectors are cleaned up automatically when leaving the
+        // settings state. This also preserves the game's touch/click behavior.
+        if (state && typeof state.trackClicks === "function") {
+            state.trackClicks(element, callback, { preventDefault: false });
+        } else {
+            element.addEventListener("click", callback);
+        }
+    }
+
+    installDomFallback() {
+        if (this.domObserver || typeof MutationObserver === "undefined" || !document.body) return;
+        this.domObserver = new MutationObserver(() => this.tryInjectNativeDomFallback());
+        this.domObserver.observe(document.body, { childList: true, subtree: true });
+        this.tryInjectNativeDomFallback();
+    }
+
+    tryInjectNativeDomFallback() {
+        const sidebar = document.querySelector("#state_SettingsState .sidebar");
+        const categoryContainer = document.querySelector("#state_SettingsState .categoryContainer");
+        if (!sidebar || !categoryContainer || sidebar.querySelector("[data-category-btn='" + SETTINGS_CATEGORY_ID + "']")) return;
+
+        const oldManager = sidebar.querySelector("button.manageMods");
+        const button = document.createElement("div");
+        button.innerHTML = this.renderNativeCategoryButtonHtml();
+        const categoryButton = button.firstElementChild;
+        if (oldManager) oldManager.replaceWith(categoryButton);
+        else sidebar.insertBefore(categoryButton, sidebar.querySelector(".other"));
+
+        const category = document.createElement("div");
+        category.innerHTML = this.renderNativeCategoryHtml();
+        categoryContainer.appendChild(category.firstElementChild);
+        categoryButton.addEventListener("click", () => this.activateFallbackCategory());
+        this.bindNativeSettings({ htmlElement: document.body, trackClicks: (element, cb) => element.addEventListener("click", cb) });
+    }
+
+    activateFallbackCategory() {
+        const root = document.querySelector("#state_SettingsState");
+        if (!root) return;
+        root.querySelectorAll(".category").forEach(element => element.classList.remove("active"));
+        root.querySelectorAll(".categoryButton").forEach(element => element.classList.remove("active"));
+        const category = root.querySelector("[data-category='" + SETTINGS_CATEGORY_ID + "']");
+        const button = root.querySelector("[data-category-btn='" + SETTINGS_CATEGORY_ID + "']");
+        if (category) category.classList.add("active");
+        if (button) button.classList.add("active");
+    }
+
+    renderNativeCategoryButtonHtml() {
+        return `<button class="styledButton categoryButton sms-mods-category" data-category-btn="${SETTINGS_CATEGORY_ID}">
+                    ${this.escape(this.locale === "zh" ? "游戏模组（MODS）" : "Game Mods (MODS)")}
+                    <span class="newBadge">${this.locale === "zh" ? "新的！" : "NEW!"}</span>
+                </button>`;
+    }
+
+    renderNativeCategoryHtml() {
         const definitions = Array.from(this.definitions.values());
-        this.root.innerHTML = `
-            <button id="sms-toggle" type="button" aria-expanded="${this.mod.settings.panelOpen ? "true" : "false"}" title="${this.escape(this.locale === "zh" ? "打开模组设置" : "Open mod settings")}">
-                <span class="sms-toggle-icon">⚙</span><span>${this.locale === "zh" ? "模组设置" : "Mod Settings"}</span>
-            </button>
-            <section id="sms-panel" class="sms-panel" ${this.mod.settings.panelOpen ? "" : "hidden"}>
-                <header class="sms-header">
-                    <div><strong>${this.locale === "zh" ? "模组设置" : "Mod Settings"}</strong><small>${this.locale === "zh" ? "统一管理已注册的模组设置" : "Manage settings registered by installed mods"}</small></div>
-                    <button id="sms-close" type="button" aria-label="${this.locale === "zh" ? "关闭" : "Close"}">×</button>
-                </header>
-                <div class="sms-body">
-                    ${definitions.length ? definitions.map(definition => this.renderDefinition(definition)).join("") : `<div class="sms-empty">${this.locale === "zh" ? "当前没有模组注册设置项。" : "No mod settings have been registered yet."}</div>`}
-                </div>
-                <footer class="sms-footer">Structured Mod Settings UI v${API_VERSION}</footer>
-            </section>`;
-
-        const toggle = this.root.querySelector("#sms-toggle");
-        const close = this.root.querySelector("#sms-close");
-        if (toggle) toggle.onclick = () => this.setPanelOpen(!this.mod.settings.panelOpen);
-        if (close) close.onclick = () => this.setPanelOpen(false);
-
-        for (const input of this.root.querySelectorAll("[data-sms-control]")) {
-            input.onchange = event => this.onControlChanged(event.target);
-            if (input.type === "range" || input.type === "number") input.oninput = event => this.onControlChanged(event.target);
-        }
-        for (const button of this.root.querySelectorAll("[data-sms-reset]")) {
-            button.onclick = () => this.reset(button.dataset.smsReset);
-        }
+        const body = definitions.length
+            ? definitions.map(definition => this.renderDefinition(definition)).join("")
+            : `<div class="sms-empty">${this.locale === "zh" ? "当前没有模组注册设置项。" : "No mod settings have been registered yet."}</div>`;
+        return `<div class="category sms-native-category" data-category="${SETTINGS_CATEGORY_ID}">
+                    <div class="sms-category-intro setting cardbox">
+                        <div class="sms-category-intro-copy">
+                            <strong>${this.locale === "zh" ? "模组设置" : "Mod Settings"}</strong>
+                            <span>${this.locale === "zh" ? "由已安装的模组提供的设置集中显示在这里。" : "Settings provided by installed mods are shown here."}</span>
+                        </div>
+                        <button type="button" class="styledButton sms-open-manager" data-sms-open-manager="1">
+                            ${this.locale === "zh" ? "管理模组" : "Manage Mods"}
+                        </button>
+                    </div>
+                    ${body}
+                </div>`;
     }
 
     renderDefinition(definition) {
         const fields = definition.fields.map(field => {
             if (field.type === "heading") {
-                return `<div class="sms-field-heading">${this.escape(field.label)}</div>`;
+                return `<div class="sms-setting-heading">${this.escape(field.label)}</div>`;
             }
+
             const value = this.get(definition.id, field.id);
             const label = this.escape(field.label);
-            const description = field.description ? `<small>${this.escape(field.description)}</small>` : "";
+            const description = field.description ? `<div class="desc">${this.escape(field.description)}</div>` : "";
+            const common = `data-sms-control="1" data-sms-mod="${this.escape(definition.id)}" data-sms-field="${this.escape(field.id)}"`;
             let control = "";
             if (field.type === "boolean") {
-                control = `<input data-sms-control="1" data-sms-mod="${this.escape(definition.id)}" data-sms-field="${this.escape(field.id)}" type="checkbox" ${value ? "checked" : ""}>`;
+                control = `<button type="button" class="value checkbox ${value ? "checked" : ""}" ${common} aria-pressed="${value ? "true" : "false"}"><span class="knob"></span></button>`;
             } else if (field.type === "number") {
-                control = `<div class="sms-number-control"><input data-sms-control="1" data-sms-mod="${this.escape(definition.id)}" data-sms-field="${this.escape(field.id)}" type="range" min="${field.min}" max="${field.max}" step="${field.step}" value="${this.escape(value)}"><input data-sms-control="1" data-sms-mod="${this.escape(definition.id)}" data-sms-field="${this.escape(field.id)}" type="number" min="${field.min}" max="${field.max}" step="${field.step}" value="${this.escape(value)}"><span>x</span></div>`;
+                control = `<div class="sms-number-control">
+                    <div class="value rangeInputContainer noPressEffect">
+                        <label data-sms-number-label="1">${this.escape(this.formatNumber(value))}</label>
+                        <input class="rangeInput" ${common} type="range" min="${field.min}" max="${field.max}" step="${field.step}" value="${this.escape(value)}">
+                    </div>
+                    <input class="sms-number-input" ${common} type="number" min="${field.min}" max="${field.max}" step="${field.step}" value="${this.escape(value)}">
+                </div>`;
             } else if (field.type === "select") {
-                control = `<select data-sms-control="1" data-sms-mod="${this.escape(definition.id)}" data-sms-field="${this.escape(field.id)}">${field.options.map((option, index) => `<option value="${index}" ${option.value === value ? "selected" : ""}>${this.escape(option.label)}</option>`).join("")}</select>`;
+                control = `<select class="value enum sms-select" ${common}>${field.options.map((option, index) => `<option value="${index}" ${option.value === value ? "selected" : ""}>${this.escape(option.label)}</option>`).join("")}</select>`;
             } else {
-                control = `<input data-sms-control="1" data-sms-mod="${this.escape(definition.id)}" data-sms-field="${this.escape(field.id)}" type="text" value="${this.escape(value)}" placeholder="${this.escape(field.placeholder)}">`;
+                control = `<input class="sms-text-input" ${common} type="text" value="${this.escape(value)}" placeholder="${this.escape(field.placeholder)}">`;
             }
-            return `<div class="sms-field"><div class="sms-field-copy"><label>${label}</label>${description}</div><div class="sms-field-control">${control}</div></div>`;
+            return `<div class="row sms-field-row"><div class="sms-field-copy"><label>${label}</label>${description}</div><div class="sms-field-control">${control}</div></div>`;
         }).join("");
-        const description = definition.description ? `<p class="sms-definition-description">${this.escape(definition.description)}</p>` : "";
-        return `<article class="sms-definition"><div class="sms-definition-header"><div><h3>${this.escape(definition.title)}</h3>${description}</div><button type="button" data-sms-reset="${this.escape(definition.id)}">${this.locale === "zh" ? "恢复默认" : "Reset"}</button></div>${fields}</article>`;
+
+        const description = definition.description ? `<div class="desc sms-definition-description">${this.escape(definition.description)}</div>` : "";
+        return `<div class="setting cardbox sms-definition">
+                    <div class="sms-definition-header row"><div class="sms-definition-copy"><label>${this.escape(definition.title)}</label>${description}</div><button type="button" class="styledButton sms-reset" data-sms-reset="${this.escape(definition.id)}">${this.locale === "zh" ? "恢复默认" : "Reset"}</button></div>
+                    <div class="sms-definition-fields">${fields}</div>
+                </div>`;
     }
 
-    onControlChanged(control) {
+    formatNumber(value) {
+        const number = Number(value);
+        if (!Number.isFinite(number)) return String(value);
+        return String(Number(number.toFixed(4)));
+    }
+
+    bindNativeSettings(state) {
+        const root = state && state.htmlElement ? state.htmlElement : document;
+        const category = root.querySelector ? root.querySelector("[data-category='" + SETTINGS_CATEGORY_ID + "']") : null;
+        if (!category) return;
+
+        for (const control of category.querySelectorAll("[data-sms-control]")) {
+            control.addEventListener("click", event => {
+                const field = this.getFieldFromControl(control);
+                if (field && field.type === "boolean") {
+                    event.preventDefault();
+                    control.classList.toggle("checked");
+                    control.setAttribute("aria-pressed", control.classList.contains("checked") ? "true" : "false");
+                    this.onControlChanged(control, true);
+                }
+            });
+            control.addEventListener("change", () => this.onControlChanged(control, true));
+            if (control.type === "range") {
+                control.addEventListener("input", () => this.onControlChanged(control, false));
+            }
+        }
+        for (const button of category.querySelectorAll("[data-sms-reset]")) {
+            button.addEventListener("click", () => this.reset(button.dataset.smsReset));
+        }
+        const manager = category.querySelector("[data-sms-open-manager]");
+        if (manager) {
+            manager.addEventListener("click", () => {
+                if (state && typeof state.moveToStateAddGoBack === "function") state.moveToStateAddGoBack("ModsState");
+            });
+        }
+    }
+
+    getFieldFromControl(control) {
+        const definition = this.getDefinition(control.dataset.smsMod);
+        return definition && definition.fields.find(field => field.id === control.dataset.smsField);
+    }
+
+    onControlChanged(control, persist) {
         const modId = control.dataset.smsMod;
         const fieldId = control.dataset.smsField;
-        const definition = this.getDefinition(modId);
-        const field = definition && definition.fields.find(item => item.id === fieldId);
+        const field = this.getFieldFromControl(control);
         if (!field) return;
 
         let value;
         if (field.type === "boolean") {
-            value = control.checked;
+            value = control.classList.contains("checked");
         } else if (field.type === "number") {
             value = control.value;
         } else if (field.type === "select") {
@@ -381,11 +550,18 @@ class StructuredSettingsRegistry {
         } else {
             value = control.value;
         }
-        this.set(modId, fieldId, value, { source: "ui", rerender: false });
+        this.set(modId, fieldId, value, { source: "ui", persist, rerender: false });
 
         if (field.type === "number") {
-            for (const peer of this.root.querySelectorAll(`[data-sms-mod="${this.escapeAttribute(modId)}"][data-sms-field="${this.escapeAttribute(fieldId)}"]`)) {
-                if (peer !== control) peer.value = String(this.get(modId, fieldId));
+            const normalized = String(this.get(modId, fieldId));
+            const category = control.closest("[data-category='" + SETTINGS_CATEGORY_ID + "']");
+            if (category) {
+                for (const peer of category.querySelectorAll("[data-sms-mod='" + this.escapeAttribute(modId) + "'][data-sms-field='" + this.escapeAttribute(fieldId) + "']")) {
+                    if (peer !== control) peer.value = normalized;
+                }
+                const label = category.querySelector("[data-sms-mod='" + this.escapeAttribute(modId) + "'][data-sms-field='" + this.escapeAttribute(fieldId) + "'][type='range']")
+                    && category.querySelector("[data-sms-mod='" + this.escapeAttribute(modId) + "'][data-sms-field='" + this.escapeAttribute(fieldId) + "'][type='range']").closest(".rangeInputContainer").querySelector("[data-sms-number-label]");
+                if (label) label.textContent = this.formatNumber(this.get(modId, fieldId));
             }
         }
     }
@@ -394,43 +570,205 @@ class StructuredSettingsRegistry {
         return this.text(value).replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
     }
 
+    refreshNativeSettings() {
+        this.locale = this.detectLocale();
+        const root = document.querySelector("#state_SettingsState");
+        if (!root) return;
+        const category = root.querySelector("[data-category='" + SETTINGS_CATEGORY_ID + "']");
+        if (!category) return;
+
+        const active = category.classList.contains("active");
+        const holder = document.createElement("div");
+        holder.innerHTML = this.renderNativeCategoryHtml();
+        const replacement = holder.firstElementChild;
+        if (!replacement) return;
+        if (active) replacement.classList.add("active");
+        category.replaceWith(replacement);
+
+        const state = this.mod.app && this.mod.app.stateMgr && this.mod.app.stateMgr.getCurrentState
+            ? this.mod.app.stateMgr.getCurrentState()
+            : null;
+        this.bindNativeSettings(state || { htmlElement: root });
+    }
+
+    openNativeSettings() {
+        const stateManager = this.mod.app && this.mod.app.stateMgr;
+        if (!stateManager) return;
+        const current = stateManager.getCurrentState && stateManager.getCurrentState();
+        if (current && current.getKey && current.getKey() === "SettingsState") {
+            this.activateNativeSettingsCategory(current);
+            return;
+        }
+        stateManager.moveToState("SettingsState");
+        setTimeout(() => {
+            const next = stateManager.getCurrentState && stateManager.getCurrentState();
+            this.activateNativeSettingsCategory(next);
+        }, 250);
+    }
+
+    activateNativeSettingsCategory(state) {
+        if (!state) return;
+        const root = state.htmlElement || document.querySelector("#state_SettingsState");
+        const button = root && root.querySelector("[data-category-btn='" + SETTINGS_CATEGORY_ID + "']");
+        if (!button) return;
+        if (typeof state.setActiveCategory === "function") state.setActiveCategory(SETTINGS_CATEGORY_ID);
+        else this.activateFallbackCategory();
+    }
+
+    closeNativeSettings() {
+        const stateManager = this.mod.app && this.mod.app.stateMgr;
+        const state = stateManager && stateManager.getCurrentState && stateManager.getCurrentState();
+        if (state && state.getKey && state.getKey() === "SettingsState" && typeof state.onBackButton === "function") {
+            state.onBackButton();
+        }
+    }
+
     getCss() {
         return `
-            #sms-root { position: fixed; top: 14px; right: 14px; z-index: 100000; color: #edf6ff; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; pointer-events: none; }
-            #sms-root button, #sms-root input, #sms-root select { font: inherit; }
-            #sms-toggle { pointer-events: auto; display: inline-flex; align-items: center; gap: 6px; padding: 7px 10px; border: 1px solid rgba(102,227,255,.24); border-radius: 9px; background: rgba(9,18,39,.92); color: #dceeff; cursor: pointer; box-shadow: 0 5px 18px rgba(0,0,0,.26); }
-            #sms-toggle:hover { border-color: #66e3ff; color: #fff; }
-            .sms-toggle-icon { color: #66e3ff; font-size: 15px; line-height: 1; }
-            .sms-panel { pointer-events: auto; width: min(410px, calc(100vw - 28px)); max-height: calc(100vh - 74px); margin-top: 8px; overflow: auto; border: 1px solid rgba(102,227,255,.24); border-radius: 14px; background: linear-gradient(145deg, rgba(12,24,51,.98), rgba(26,20,55,.98)); box-shadow: 0 18px 52px rgba(0,0,0,.52), 0 0 26px rgba(102,227,255,.08); }
-            .sms-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 14px 15px 11px; border-bottom: 1px solid rgba(145,208,255,.14); }
-            .sms-header strong { display: block; color: #fff; font-size: 13px; letter-spacing: .04em; }
-            .sms-header small, .sms-footer { color: #91a9cb; font-size: 9px; }
-            #sms-close { width: 24px; height: 24px; padding: 0; border: 1px solid rgba(255,255,255,.14); border-radius: 50%; background: rgba(255,255,255,.06); color: #bcd7ff; cursor: pointer; font-size: 17px; line-height: 17px; }
-            #sms-close:hover { color: #fff; background: rgba(255,255,255,.14); }
-            .sms-body { display: flex; flex-direction: column; gap: 10px; padding: 12px; }
-            .sms-definition { padding: 11px; border: 1px solid rgba(145,208,255,.14); border-radius: 10px; background: rgba(7,16,36,.52); }
-            .sms-definition-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
-            .sms-definition h3 { margin: 0; color: #dff7ff; font-size: 12px; }
-            .sms-definition-description { margin: 4px 0 0; color: #91a9cb; font-size: 9px; line-height: 1.4; }
-            .sms-definition-header button { flex: 0 0 auto; padding: 4px 6px; border: 1px solid rgba(145,208,255,.16); border-radius: 6px; background: rgba(255,255,255,.06); color: #91a9cb; cursor: pointer; font-size: 9px; }
-            .sms-definition-header button:hover { color: #fff; border-color: #66e3ff; }
-            .sms-field { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 34px; padding: 7px 0; border-top: 1px solid rgba(145,208,255,.08); }
-            .sms-field-copy { min-width: 0; }
-            .sms-field-copy label { display: block; color: #d5e8ff; font-size: 10px; }
-            .sms-field-copy small { display: block; margin-top: 3px; color: #829bc1; font-size: 8px; line-height: 1.35; }
-            .sms-field-control { flex: 0 0 auto; max-width: 58%; }
-            .sms-field-control > input[type="text"], .sms-field-control > select { width: 142px; padding: 5px 6px; border: 1px solid rgba(145,208,255,.20); border-radius: 6px; outline: none; background: rgba(0,0,0,.25); color: #edf6ff; font-size: 10px; }
-            .sms-field-control select { max-width: 160px; }
-            .sms-field-control input:focus, .sms-field-control select:focus { border-color: #66e3ff; box-shadow: 0 0 0 2px rgba(102,227,255,.12); }
-            .sms-field-control input[type="checkbox"] { width: 18px; height: 18px; accent-color: #54f5aa; }
-            .sms-number-control { display: flex; align-items: center; gap: 5px; }
-            .sms-number-control input[type="range"] { width: 110px; accent-color: #66e3ff; }
-            .sms-number-control input[type="number"] { width: 58px; padding: 4px; border: 1px solid rgba(145,208,255,.20); border-radius: 6px; background: rgba(0,0,0,.25); color: #edf6ff; font-size: 10px; }
-            .sms-number-control span { color: #91a9cb; font-size: 9px; }
-            .sms-field-heading { padding: 8px 0 3px; color: #66e3ff; font-size: 9px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
-            .sms-empty { padding: 20px 8px; color: #91a9cb; text-align: center; font-size: 10px; }
-            .sms-footer { padding: 0 14px 11px; text-align: right; }
-            #sms-root [hidden] { display: none !important; }
+            #state_SettingsState .sidebar button.sms-mods-category {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                padding-right: 5px;
+                background-color: #f8ddfb;
+                color: #cf38df;
+            }
+            #state_SettingsState .sidebar button.sms-mods-category .newBadge {
+                margin-left: auto;
+                padding: 0 5px;
+                border-radius: 8px;
+                background: #cf38df;
+                color: #fff;
+                font-size: .8em;
+                line-height: 1.6;
+            }
+            #state_SettingsState .sidebar button.sms-mods-category.active {
+                background-color: #cf38df;
+                color: #fff;
+            }
+            #state_SettingsState .sms-native-category .sms-category-intro {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 15px;
+            }
+            #state_SettingsState .sms-category-intro-copy {
+                display: flex;
+                min-width: 0;
+                flex-direction: column;
+            }
+            #state_SettingsState .sms-category-intro-copy strong,
+            #state_SettingsState .sms-definition-copy > label {
+                text-transform: uppercase;
+                font-size: 1.1em;
+            }
+            #state_SettingsState .sms-category-intro-copy span {
+                margin-top: 5px;
+                color: #aaadb2;
+                font-size: .85em;
+            }
+            #state_SettingsState .sms-open-manager,
+            #state_SettingsState .sms-reset {
+                flex: 0 0 auto;
+                padding: 4px 9px;
+                font-size: .78em;
+            }
+            #state_SettingsState .sms-definition-header {
+                grid-template-columns: 1fr auto;
+                margin-bottom: 5px;
+            }
+            #state_SettingsState .sms-definition-copy {
+                min-width: 0;
+            }
+            #state_SettingsState .sms-definition-description {
+                margin-top: 5px;
+            }
+            #state_SettingsState .sms-field-row {
+                min-height: 34px;
+                padding-top: 7px;
+                padding-bottom: 7px;
+                border-top: 1px solid rgba(130, 135, 145, .15);
+            }
+            #state_SettingsState .sms-field-copy {
+                min-width: 0;
+            }
+            #state_SettingsState .sms-field-copy label {
+                text-transform: none;
+            }
+            #state_SettingsState .sms-field-copy .desc {
+                max-width: 680px;
+            }
+            #state_SettingsState .sms-field-control {
+                display: flex;
+                align-items: center;
+                justify-content: flex-end;
+                pointer-events: all;
+            }
+            #state_SettingsState .sms-number-control {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
+            #state_SettingsState .sms-number-control .rangeInputContainer {
+                min-width: 142px;
+            }
+            #state_SettingsState .sms-number-input,
+            #state_SettingsState .sms-text-input,
+            #state_SettingsState .sms-select {
+                box-sizing: border-box;
+                min-width: 110px;
+                padding: 4px 7px;
+                border: 0;
+                border-radius: 4px;
+                outline: 0;
+                background: #fff;
+                color: #56585d;
+                font: inherit;
+                pointer-events: all;
+            }
+            #state_SettingsState .sms-number-input {
+                width: 66px;
+                min-width: 66px;
+            }
+            #state_SettingsState .sms-text-input {
+                width: 180px;
+            }
+            #state_SettingsState .sms-select {
+                max-width: 190px;
+                cursor: pointer;
+            }
+            #state_SettingsState .sms-number-input:focus,
+            #state_SettingsState .sms-text-input:focus,
+            #state_SettingsState .sms-select:focus {
+                box-shadow: 0 0 0 2px rgba(84, 174, 230, .35);
+            }
+            #state_SettingsState .sms-setting-heading {
+                padding: 8px 0 3px;
+                color: #5b9ed5;
+                font-size: .82em;
+                font-weight: bold;
+                text-transform: uppercase;
+            }
+            #state_SettingsState .sms-empty {
+                padding: 30px 10px;
+                color: #aaadb2;
+                text-align: center;
+            }
+            #state_SettingsState .sms-native-category .sms-definition:last-child {
+                margin-bottom: 0;
+            }
+            #state_SettingsState.darkMode .sms-number-input,
+            #state_SettingsState.darkMode .sms-text-input,
+            #state_SettingsState.darkMode .sms-select {
+                background: #35383d;
+                color: #ddd;
+            }
+            [data-theme="dark"] #state_SettingsState .sms-number-input,
+            [data-theme="dark"] #state_SettingsState .sms-text-input,
+            [data-theme="dark"] #state_SettingsState .sms-select {
+                background: #35383d;
+                color: #ddd;
+            }
         `;
     }
 }

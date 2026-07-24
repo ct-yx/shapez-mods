@@ -1,6 +1,6 @@
 # shapez.io Mods
 
-这是 ct-yx 与 Codex 共同整理和维护的 shapez.io 一代 mod 集合，集中整理了传送带加速、工厂压力测试和多向平衡器等工具。它们主要用于提升工厂搭建效率、测试工厂在高模拟倍率下的表现，以及扩展基础物流布局能力。
+这是 ct-yx 与 Codex 共同整理和维护的 shapez.io 一代 mod 集合，集中整理了传送带加速、工厂压力测试、多向平衡器和快捷键工具。它们主要用于提升工厂搭建效率、测试工厂在高模拟倍率下的表现，以及扩展基础物流布局能力。
 
 项目中的 mod 都采用单文件形式，复制到游戏的 mods 目录即可使用，不需要额外的构建工具或依赖。最低游戏版本为 `1.5.0`。其中 `Factory Stress Lab` 是当前持续维护和迭代的主 mod，其余文件是独立的小型功能 mod，可以按需启用。
 
@@ -10,32 +10,37 @@
 
 ## 项目特色
 
-- **物流加速**：所有等级传送带和地下传送带统一提升 10 倍速度。
+- **物流加速**：所有等级传送带、地下传送带和原版 2-way 平衡器可统一调速。
 - **性能测试**：Factory Stress Lab 以约 40 FPS 为目标自动调节模拟倍率，并记录 FPS、逻辑耗时、实体数量、倍率和机器压力。
 - **报告导出**：压力测试结果可以导出为 PNG、独立网页或纯文本报告。
-- **布局扩展**：提供 4 向和 8 向平衡器，适合大型工厂的物流分流与合流。
+- **布局扩展**：将 4/5/8/10/16-way 平衡器挂入原版 balancer 的变形体列表。
+- **快捷切换**：按住 `T` 或 `R` 后配合数字键、滚轮快速选择变形体或方向。
 
 ## Mods
 
 | 文件 | 功能 |
 | --- | --- |
-| `mods/belt-speed-10x.js` | 所有等级的普通传送带与地下传送带速度提升 10 倍 |
+| `mods/belt-speed-10x.js` | 可在 MODS 设置中以 1x–50x 滑块调节普通/地下传送带和原版 2-way 平衡器 |
 | `mods/factory-stress-lab.js` | 无限倍率控制、40 FPS 压力测试、性能曲线与 PNG/网页/文本报告导出；Benchmark 面板支持展开/收起 |
 | `mods/structured-mod-settings.js` | 为其他 mod 提供可复用的结构化设置面板与持久化 API |
-| `mods/zoomout-before-mapmode.js` | 地图总览缩放阈值示例 mod，使用结构化设置面板调节 |
-| `mods/4-way-balancer.js` | 4 向平衡器 |
-| `mods/8-way-balancer.js` | 8 向平衡器 |
+| `mods/zoomout-before-mapmode.js` | 地图总览缩放阈值与低缩放传送带物品简化显示 |
+| `mods/balancer-variants.js` | 原版 balancer 的 4/5/8/10/16-way 变形体；不额外占用 toolbar 格子 |
+| `mods/key-reform.js` | `T`/`R` + 数字键和按住 `T`/`R` 滚轮快捷切换 |
 
 ## 功能介绍
 
-### Belt Speed ×10
+### Belt Speed Control
 
-`belt-speed-10x.js` 修改游戏中传送带速度的基础计算逻辑：
+`belt-speed-10x.js` 修改游戏中传送带和处理器速度的基础计算逻辑，并在安装 `Structured Mod Settings UI` 时显示在“设置 → 游戏模组（MODS）”中：
 
-- 普通传送带的每个升级等级都提升为原速度的 10 倍。
-- 地下传送带的每个升级等级也同步提升为原速度的 10 倍。
+- “Enable belt acceleration” 开关控制功能是否启用。
+- “Speed per tier” 滑块范围为 `1x–50x`，默认 `10x`；`1x` 直接使用原版速度，相当于禁用加速。
+- 普通传送带和地下传送带的每个升级等级都按同一倍率提升。
+- 原版 balancer 的处理速度单独同步提升，避免传送带很快但 2-way balancer 仍然慢。
 - 保留原有的等级和升级关系，不额外添加建筑或改变存档结构。
 - 适合快速测试大型物流网络，或减少早期工厂的等待时间。
+
+如果 `Structured Mod Settings UI` 的加载顺序晚于本 mod，传送带 mod 会先排队，待设置前置初始化后自动注册设置卡片。
 
 ### Factory Stress Lab
 
@@ -108,16 +113,35 @@ Benchmark 页面默认收起，点击 `PRESSURE Benchmark` 标题即可展开或
 - 其中缓存输入：`79,750,912`
 - 推理输出：`364,875`
 
-### 4-way Balancer 与 8-way Balancer
+### Balancer Variants
 
-- `4-way-balancer.js` 提供 4 向平衡器。
-- `8-way-balancer.js` 提供 8 向平衡器。
-- 两者用于多路物流的分流与合流，适合大型工厂和高吞吐量布局。
-- 两个文件保留各自的建筑配置与贴图资源，不依赖 `Factory Stress Lab` 或 `Belt Speed ×10`。
+`balancer-variants.js` 使用官方 `addVariantToExistingBuilding` API，将多向平衡器挂到原版 `balancer` 的变形体列表中：
+
+- 保留原版 2-way、merger 和 splitter 变形体。
+- 增加 `4-way`、`5-way`、`8-way`、`10-way`、`16-way`。
+- 每个变形体使用独立的横向 PNG 条带，按实际宽度占用 `N×1` 格。
+- 每个输入槽都会轮流输出到可用槽，处理器速度设置为足够高，避免扩展平衡器成为额外瓶颈。
+- 不调用 `addNewBuildingToToolbar`，因此不会在物品栏增加独立格子；选择原版 balancer 后按 `T` 即可切换。
+
+旧版 `4-way-balancer.js` 和 `8-way-balancer.js` 已移到 `legacy/` 并改为 `.disabled`，仅用于兼容参考，不会被游戏自动加载。
+
+### Key Reform
+
+`key-reform.js` 只在建造模式中接管组合输入：
+
+- 按住 `T` 后按数字键选择变形体；默认 `T+4`/`T+5`/`T+8`/`T+0`/`T+6` 分别优先选择 4/5/8/10/16-way，其他建筑则回退为按变形体序号选择。
+- 按住 `R` 后按 `1`/`2`/`3`/`4`，分别设置上/右/下/左方向。
+- 按住 `T` 滚轮会读取当前建筑检测到的全部可用变形体，对其他 mod 增加的变形体也生效；按住 `R` 滚轮每格旋转 90°。
+- 设置卡片会自动检测已注册的建筑变形体，生成可编辑的 `T+0`–`T+9` 绑定下拉框；选择 `Auto` 可恢复上下文匹配。
+- 组合滚轮会阻止镜头缩放；普通滚轮仍保持原版地图缩放行为。
 
 ### Structured Mod Settings UI
 
-`structured-mod-settings.js` 是一个可作为前置 mod 使用的设置 UI 库。它会在游戏右上角提供一个默认收起的 `Mod Settings` 面板，其他 mod 可以注册结构化字段：
+`structured-mod-settings.js` 是一个可作为前置 mod 使用的设置 UI 库。它会把原本分散在各个 mod 中的设置集中到游戏原生“设置 → 游戏模组（MODS）”分类，顶层按 mod 分组，每个 mod 卡片下面显示其子设置；不再在游戏右上角额外放置悬浮面板。
+
+设置页面支持跟随游戏语言：简体/繁体中文显示中文，其他已安装语言默认显示英语。界面使用游戏原生的分类按钮、卡片、滑块和开关样式。
+
+其他 mod 可以注册结构化字段：
 
 - 布尔开关
 - 数值滑块与数字输入框
@@ -125,7 +149,7 @@ Benchmark 页面默认收起，点击 `PRESSURE Benchmark` 标题即可展开或
 - 文本输入
 - 分组标题、说明文字和恢复默认按钮
 
-设置会由前置 mod 统一保存，其他 mod 只需要注册定义并读取 API，不需要自己编写面板或实现持久化。
+设置会由前置 mod 统一保存，其他 mod 只需要注册定义并读取 API，不需要自己编写面板或实现持久化。点击设置分类中的“管理模组”仍可进入游戏原生的 mod 管理页面。
 
 #### 其他 mod 的接入方式
 
@@ -160,7 +184,18 @@ const settings = settingsApi && settingsApi.register({
 const amount = settings ? settings.get("amount") : 1;
 ```
 
-完整示例是 `zoomout-before-mapmode.js`：它把地图总览阈值暴露为 `0.1–1.5` 的滑块，数值越小，进入地图总览模式越晚。没有安装前置 mod 时，该示例仍会使用默认值运行。
+完整示例是 `zoomout-before-mapmode.js`：它把地图总览阈值显示为“屏幕横向可见网格数”，并按照当前窗口宽度与每格 `32 px` 自动换算为游戏内部缩放值。范围的内部下限扩展到 `0.02`；网格数越多，进入地图总览模式越晚。没有安装前置 mod 时，该示例仍会使用默认值运行。
+
+### Zoom out before Mapmode
+
+除了调整进入地图总览的阈值，这个 mod 还会根据**实际镜头缩放值**优化传送带物品显示：
+
+- 默认实际镜头缩放低于 `0.5` 时，隐藏传送带中间的物品，只保留每条传送带路径首尾的物品图标。
+- 设置页面同样使用横向网格数；当前窗口宽度变化后会重新计算可调范围，内部缩放下限为 `0.02`。
+- 鼠标移到路径起始或结束物品图标附近时，该图标会放大，触发范围已扩大；相邻端点是不同物品时按距离选择最近的一个。
+- 相邻端点是相同物品时会合并为一个放大的视觉组，避免同类图标重复堆叠。
+- 该逻辑读取的是 `camera.zoomLevel`，与 `1x`、`5x`、`100x` 等模拟倍率无关。
+- “设置 → 游戏模组（MODS）→ 地图总览缩放”中可以关闭简化显示，也可以调整地图模式与传送带简化的横向网格数阈值。
 
 ## 安装
 
@@ -172,24 +207,37 @@ const amount = settings ? settings.get("amount") : 1;
 
 启动游戏后，在 mod 管理界面启用对应 mod。修改 mod 文件后需要重启游戏。
 
+## 配置文件位置
+
+当前官方 shapez.io 一代 mod loader 的 `saveSettings()` 存储接口会把 mod 配置写入：
+
+```text
+~/Library/Preferences/shapez.io/saves/modsettings_<mod-id>__<version>.json
+```
+
+例如本项目的结构化设置数据位于 `saves/modsettings_structured-mod-settings-ui__<version>.json`。`mods/` 目录只用于加载 `.js` 模组。用户侧的独立配置目录可以规划为 `~/Library/Preferences/shapez.io/config/`，但当前官方 Electron 的 `fs-job` 接口固定以 `saves/` 作为运行时设置根目录；要让 mod 配置真正写入 `shapez.io/config/`，需要同步调整游戏 Electron 主进程的存储处理。仓库中的 `mods/` 目录用于模组代码。
+
 ## 推荐组合
 
-- **普通建厂**：只启用需要的平衡器 mod。
-- **快速物流测试**：启用 `Belt Speed ×10`。
+- **普通建厂**：只启用需要的 `Balancer Variants`。
+- **快速物流测试**：启用 `Belt Speed Control`，在 MODS 中选择倍率。
 - **性能跑分**：启用 `Factory Stress Lab`，选择 Benchmark 时长后运行压力测试。
-- **统一设置**：同时启用 `Structured Mod Settings UI` 和 `Zoom out before Mapmode`，在右上角 `Mod Settings` 面板中调节地图总览阈值。
-- **物流与性能联合测试**：同时启用 `Belt Speed ×10`、平衡器和 `Factory Stress Lab`，对比不同布局的平均倍率与机器压力分数。
+- **统一设置**：同时启用 `Structured Mod Settings UI` 和 `Zoom out before Mapmode`，进入“设置 → 游戏模组（MODS）”后调节地图总览阈值。
+- **物流与性能联合测试**：同时启用 `Belt Speed Control`、平衡器和 `Factory Stress Lab`，对比不同布局的平均倍率与机器压力分数。
 
 ## 文件结构
 
 ```text
 shapez-mods/
 ├── README.md
+├── legacy/
+│   ├── 4-way-balancer.js.disabled
+│   └── 8-way-balancer.js.disabled
 └── mods/
-    ├── 4-way-balancer.js
-    ├── 8-way-balancer.js
+    ├── balancer-variants.js
     ├── belt-speed-10x.js
     ├── factory-stress-lab.js
+    ├── key-reform.js
     ├── structured-mod-settings.js
     └── zoomout-before-mapmode.js
 ```
@@ -197,8 +245,9 @@ shapez-mods/
 ## 兼容性与注意事项
 
 - `factory-stress-lab.js` 是当前维护版本，包含 Benchmark 展开按钮修复。
-- `structured-mod-settings.js` 应在使用它的其他 mod 之前加载；在本目录中它会按文件名自然排在 `zoomout-before-mapmode.js` 之前。
-- `belt-speed-10x.js` 只修改传送带基础速度，不改变存档数据。
+- `structured-mod-settings.js` 会把设置页面扩展为原生“游戏模组（MODS）”分类；依赖它的 mod 即使加载顺序靠前也会自动等待注册。
+- `belt-speed-10x.js` 只修改运行时速度，不改变存档数据；`1x` 或关闭开关即恢复原版倍率。
+- `balancer-variants.js` 与旧版独立 4/8-way mod 不要同时启用，否则会出现重复的扩展建筑。
 - 高模拟倍率可能让游戏逻辑负载明显增加；首次测试建议从 `120 s` 开始。
 - Benchmark 页面默认收起，不运行压力测试时不会持续记录 Benchmark 曲线。
 - 如果游戏更新后 mod 行为异常，请先确认游戏版本与 `minimumGameVersion`，再重新复制最新文件。

@@ -102,45 +102,156 @@
 
     (function() {
         // shapez imports
-        var gMetaBuildingRegistry = shapez.gMetaBuildingRegistry;
         var enumAngleToDirection = shapez.enumAngleToDirection;
-        var Vector = shapez.Vector;
-        var MetaBalancerBuilding = shapez.MetaBalancerBuilding;
-        var MetaBeltBuilding = shapez.MetaBeltBuilding;
         var enumUndergroundBeltVariants = shapez.enumUndergroundBeltVariants;
         var MetaUndergroundBeltBuilding = shapez.MetaUndergroundBeltBuilding;
-        var UndergroundBeltComponent = shapez.UndergroundBeltComponent;
-        var Entity = shapez.Entity;
         var HUDBuildingPlacerLogic = shapez.HUDBuildingPlacerLogic;
         var defaultBuildingVariant = shapez.defaultBuildingVariant;
-        var enumHubGoalRewards = shapez.enumHubGoalRewards;
         var Mod = shapez.Mod;
 
         // Constants
         var BELT_ID = "belt";
         var BELT_LAYER = "regular";
-        var TUNNEL_DISTANCES = [5, 9, 7];
+
+        // Read the live range table supplied by the game. Belt Speed Control
+        // extends this array to tiers 3 and 4 and updates it when its range
+        // sliders change, so this Mod deliberately never caches the values.
+        function getTunnelTierForVariant(variant) {
+            if (variant === defaultBuildingVariant) return 0;
+            var tier2 = enumUndergroundBeltVariants && enumUndergroundBeltVariants.tier2;
+            if (variant === tier2 || variant === "tier2") return 1;
+            if (variant === "tier3") return 2;
+            if (variant === "tier4") return 3;
+            return -1;
+        }
+
+        function getAvailableTunnelCandidates(root, tunnel_class) {
+            var ranges = shapez.globalConfig && shapez.globalConfig.undergroundBeltMaxTilesByTier;
+            if (!Array.isArray(ranges) || !tunnel_class) return [];
+
+            var available_variants;
+            try {
+                available_variants = tunnel_class.getAvailableVariants(root) || [];
+            } catch (error) {
+                return [];
+            }
+
+            var tier2 = enumUndergroundBeltVariants && enumUndergroundBeltVariants.tier2 || "tier2";
+            var variants = [defaultBuildingVariant, tier2, "tier3", "tier4"];
+            var candidates = [];
+            for (var index = 0; index < variants.length; ++index) {
+                var variant = variants[index];
+                var tier = getTunnelTierForVariant(variant);
+                var range = Number(ranges[tier]);
+                if (tier < 0 || available_variants.indexOf(variant) < 0 || !Number.isFinite(range) || range < 1) {
+                    continue;
+                }
+                candidates.push({ variant: variant, tier: tier, range: Math.floor(range) });
+            }
+
+            // Prefer the shortest actually sufficient tunnel. This still does
+            // the right thing when a user gives an earlier tier a larger range
+            // multiplier than a later tier.
+            candidates.sort(function(a, b) {
+                return a.range - b.range || a.tier - b.tier;
+            });
+            return candidates;
+        }
+
+        function getTunnelChoiceForDistance(candidates, distance) {
+            for (var index = 0; index < candidates.length; ++index) {
+                if (candidates[index].range >= distance) return candidates[index];
+            }
+            return null;
+        }
+
+        function getMaximumTunnelRange(candidates) {
+            var maximum = 0;
+            for (var index = 0; index < candidates.length; ++index) {
+                maximum = Math.max(maximum, candidates[index].range);
+            }
+            return maximum;
+        }
+
+        function getRegularEntity(root, tile) {
+            return root.map.getLayerContentXY(tile.x, tile.y, BELT_LAYER);
+        }
+
+        function entityAcceptsIncomingFrom(content, world_tile, world_direction) {
+            var components = content && content.components;
+            var static_entity = components && components.StaticMapEntity;
+            var acceptor = components && components.ItemAcceptor;
+            if (!static_entity || !acceptor || typeof acceptor.findMatchingSlot !== "function") {
+                return false;
+            }
+
+            // ItemAcceptor slots are stored in local coordinates. Using both
+            // worldToLocalTile and worldDirectionToLocal is what lets the
+            // check work for rotated vanilla buildings and every width of the
+            // Balancer Variants Mod.
+            var local_tile = static_entity.worldToLocalTile(world_tile);
+            var local_direction = typeof static_entity.worldDirectionToLocal === "function"
+                ? static_entity.worldDirectionToLocal(world_direction)
+                : world_direction;
+            return !!acceptor.findMatchingSlot(local_tile, local_direction);
+        }
+
+        function isForwardBelt(content, rotation) {
+            var components = content && content.components;
+            var static_entity = components && components.StaticMapEntity;
+            if (!static_entity || !components.Belt || typeof static_entity.getMetaBuilding !== "function") {
+                return false;
+            }
+            var meta = static_entity.getMetaBuilding();
+            return !!meta && meta.getId() === BELT_ID && static_entity.rotation === rotation;
+        }
+
+        function isUndergroundTunnel(content) {
+            return !!(content && content.components && content.components.UndergroundBelt);
+        }
+
+        function canPlaceTunnelAt(placer, tunnel_class, tile, rotation, variant, rotation_variant) {
+            var logic = placer.root && placer.root.logic;
+            if (!logic || typeof logic.checkCanPlaceEntity !== "function" || typeof tunnel_class.createEntity !== "function") {
+                return true;
+            }
+
+            try {
+                var entity = tunnel_class.createEntity({
+                    root: placer.root,
+                    origin: tile,
+                    rotation: rotation,
+                    originalRotation: rotation,
+                    rotationVariant: rotation_variant,
+                    variant: variant,
+                });
+                return logic.checkCanPlaceEntity(entity, {});
+            } catch (error) {
+                return false;
+            }
+        }
 
         // Extended logic using $old to call original
         var auto_tunnel_logic = function(options) {
-            var originalExecute = options.$old;
+            var old_methods = options.$old;
 
             return {
                 executeDirectionLockedPlacement: function() {
                     var current_building = this.currentMetaBuilding.get();
                     if (!current_building) return;
 
-                    // For non-belt buildings, just call original (which handles drag-placement)
+                    // For non-belt buildings, just call original (which handles drag-placement).
                     if (current_building.getId() !== BELT_ID) {
+                        var originalExecute = old_methods.executeDirectionLockedPlacement || old_methods;
                         originalExecute.call(this);
                         return;
                     }
 
-                    // === BELT PLACEMENT WITH AUTO TUNNELS ===
                     var path = this.computeDirectionLockPath();
+                    if (!path || !path.length) return;
+
                     var placed = false;
                     var skip = false;
-
                     var self = this;
                     this.root.logic.performBulkOperation(function() {
                         self.currentBaseRotation = path[0].rotation;
@@ -154,21 +265,19 @@
                                 self.currentBaseRotation = path_item.rotation;
                             }
 
-                            var tile_content = self.root.map.getLayerContentXY(path_item.tile.x, path_item.tile.y, BELT_LAYER);
-
+                            var tile_content = getRegularEntity(self.root, path_item.tile);
                             if (tile_content) {
                                 var static_ent = tile_content.components.StaticMapEntity;
-                                var is_belt = static_ent.getMetaBuilding().getId() === BELT_ID;
-                                var same_rotation = static_ent.rotation === path_item.rotation;
+                                var is_belt = static_ent && static_ent.getMetaBuilding().getId() === BELT_ID;
+                                var same_rotation = static_ent && static_ent.rotation === path_item.rotation;
                                 if (!(is_belt && same_rotation || (skip = true, is_belt))) continue;
                             }
 
-                            var next_item = path[idx + 1];
-                            var next_content = next_item ? self.root.map.getLayerContentXY(next_item.tile.x, next_item.tile.y, BELT_LAYER) : null;
-                            var has_smart = self.root.hubGoals.isRewardUnlocked("reward_smart_tunnel");
-
-                            if ((!rotation_changed || has_smart) && !skip) {
-                                var tunnel_end = self.tryPlaceAutoTunnels(next_content, path, idx, rotation_changed && has_smart);
+                            // Keep the original Smart Tunnel reward behavior for a turn, but
+                            // use normal tunnel variants instead of the obsolete "smart" variant.
+                            var can_try_after_turn = self.root.hubGoals.isRewardUnlocked("reward_smart_tunnel");
+                            if ((!rotation_changed || can_try_after_turn) && !skip) {
+                                var tunnel_end = self.tryPlaceAutoTunnels(path, idx);
                                 if (tunnel_end !== null) {
                                     placed = true;
                                     skip = false;
@@ -187,100 +296,93 @@
                     if (placed) this.root.soundProxy.playUi(current_building.getPlacementSound());
                 },
 
-                tryPlaceAutoTunnels: function(next_entity, path_array, start_idx, need_smart) {
-                    if (!next_entity) return null;
-
+                tryPlaceAutoTunnels: function(path_array, start_idx) {
                     var base_rotation = this.currentBaseRotation;
-                    var static_entity = next_entity.components.StaticMapEntity;
+                    var next_idx = start_idx + 1;
+                    var next_item = path_array[next_idx];
+                    if (!next_item || next_item.rotation !== base_rotation) return null;
 
-                    // If the next tile is a balancer with the same rotation, skip tunnel placement
-                    var is_balancer = static_entity.getMetaBuilding().getId() === gMetaBuildingRegistry.findByClass(MetaBalancerBuilding).getId();
-                    if (is_balancer && static_entity.rotation === base_rotation) {
+                    var world_direction = enumAngleToDirection[base_rotation];
+                    var next_content = getRegularEntity(this.root, next_item.tile);
+                    if (!next_content) return null;
+
+                    // Do not hide a legitimate machine input (including any
+                    // 4/5/8/10/16-way balancer input) behind a new tunnel.
+                    if (entityAcceptsIncomingFrom(next_content, next_item.tile, world_direction)) {
                         return null;
                     }
 
-                    var item_acceptor = next_entity.components.ItemAcceptor;
-                    var local_tile = static_entity.worldToLocalTile(path_array[start_idx + 1].tile);
-
-                    if (item_acceptor && item_acceptor.findMatchingSlot(local_tile, enumAngleToDirection[base_rotation])) {
+                    // A forward belt is a normal continuation, not an obstacle.
+                    // Existing tunnels are also a hard stop: never nest, bridge
+                    // over, or replace a tunnel automatically.
+                    if (isForwardBelt(next_content, base_rotation) || isUndergroundTunnel(next_content)) {
                         return null;
                     }
 
-                    var belt_class = gMetaBuildingRegistry.findByClass(MetaBeltBuilding);
-                    var tunnel_class = gMetaBuildingRegistry.findByClass(MetaUndergroundBeltBuilding);
-
-                    var max_dist = this.root.hubGoals.isRewardUnlocked(enumHubGoalRewards.reward_underground_belt_tier_2) ? TUNNEL_DISTANCES[1] : TUNNEL_DISTANCES[0];
-                    if (need_smart) max_dist = TUNNEL_DISTANCES[2];
+                    var tunnel_class = shapez.gMetaBuildingRegistry.findByClass(MetaUndergroundBeltBuilding);
+                    var candidates = getAvailableTunnelCandidates(this.root, tunnel_class);
+                    var maximum_range = getMaximumTunnelRange(candidates);
+                    if (!tunnel_class || maximum_range < 2) return null;
 
                     var end_idx = null;
-                    var had_gap = true;
-                    var found_invalid = true;
-
-                    for (var check = start_idx + max_dist; check > start_idx; check--) {
+                    for (var check = next_idx; check < path_array.length; ++check) {
                         var item = path_array[check];
-                        if (!item || item.rotation !== base_rotation) continue;
+                        if (!item || item.rotation !== base_rotation) break;
 
-                        var tile = item.tile;
-                        var content = this.root.map.getLayerContentXY(tile.x, tile.y, BELT_LAYER);
+                        var distance = check - start_idx;
+                        if (distance > maximum_range) break;
 
-                        if (content) {
-                            had_gap = false;
-                            var content_static = content.components.StaticMapEntity;
-                            var content_tunnel = content.components.UndergroundBelt;
-
-                            if (content_static.getMetaBuilding().getId() !== BELT_ID || content_static.rotation !== base_rotation) {
-                                found_invalid = false;
-                            }
-
-                            var tier = end_idx !== null && end_idx - start_idx > TUNNEL_DISTANCES[0] ? 1 : 0;
-                            var rot_ok = content_static.rotation === base_rotation || content_static.rotation === (base_rotation + 180) % 360;
-                            if (content_tunnel && content_tunnel.tier === tier && rot_ok) return null;
-                        } else {
-                            if (had_gap) end_idx = check;
-                            else had_gap = true;
+                        var content = getRegularEntity(this.root, item.tile);
+                        if (!content) {
+                            // Stop at the first clear exit after one contiguous
+                            // obstacle. This conservative rule avoids jumping
+                            // over unrelated belts or nested tunnel networks.
+                            end_idx = check;
+                            break;
                         }
+
+                        if (isUndergroundTunnel(content)) return null;
+                        if (entityAcceptsIncomingFrom(content, item.tile, world_direction)) return null;
+                        if (isForwardBelt(content, base_rotation)) return null;
                     }
 
-                    if (found_invalid) return null;
+                    if (end_idx === null) return null;
+                    var choice = getTunnelChoiceForDistance(candidates, end_idx - start_idx);
+                    if (!choice) return null;
 
-                    if (end_idx !== null && base_rotation === path_array[end_idx].rotation) {
-                        var variant = need_smart ? "smart" : (end_idx - start_idx > TUNNEL_DISTANCES[0] ? enumUndergroundBeltVariants.tier2 : defaultBuildingVariant);
-
-                        // Save state for rollback
-                        var saved_rotation = this.currentBaseRotation;
-                        var saved_variant = this.currentVariant.get();
-                        var saved_building = this.currentMetaBuilding.get();
-
-                        try {
-                            // Place entry tunnel
-                            this.currentMetaBuilding.set(tunnel_class);
-                            this.currentBaseRotation = base_rotation;
-                            this.currentVariant.set(variant);
-                            var first_ok = this.tryPlaceCurrentBuildingAt(path_array[start_idx].tile);
-
-                            // Place exit tunnel (opposite rotation)
-                            this.currentBaseRotation = (base_rotation + 180) % 360;
-                            var second_ok = this.tryPlaceCurrentBuildingAt(path_array[end_idx].tile);
-
-                            if (!first_ok || !second_ok) return null;
-
-                            // Success - restore state
-                            this.currentBaseRotation = saved_rotation;
-                            this.currentVariant.set(saved_variant);
-                            this.currentMetaBuilding.set(belt_class);
-
-                            return end_idx;
-                        } catch (e) {
-                            // Error - rollback
-                            this.currentBaseRotation = saved_rotation;
-                            this.currentVariant.set(saved_variant);
-                            this.currentMetaBuilding.set(saved_building);
-                            return null;
-                        }
+                    // Preflight both endpoints before replacing the starting
+                    // belt. This avoids a half-placed tunnel pair when a tile
+                    // is protected, occupied by a non-replaceable building, or
+                    // vetoed by another placement Mod.
+                    if (!canPlaceTunnelAt(this, tunnel_class, path_array[start_idx].tile, base_rotation, choice.variant, 0)) {
+                        return null;
+                    }
+                    if (!canPlaceTunnelAt(this, tunnel_class, path_array[end_idx].tile, base_rotation, choice.variant, 1)) {
+                        return null;
                     }
 
-                    return null;
-                }
+                    var saved_rotation = this.currentBaseRotation;
+                    var saved_variant = this.currentVariant.get();
+                    var saved_building = this.currentMetaBuilding.get();
+                    try {
+                        this.currentMetaBuilding.set(tunnel_class);
+                        this.currentBaseRotation = base_rotation;
+                        this.currentVariant.set(choice.variant);
+                        if (!this.tryPlaceCurrentBuildingAt(path_array[start_idx].tile)) return null;
+
+                        this.currentBaseRotation = (base_rotation + 180) % 360;
+                        this.currentVariant.set(choice.variant);
+                        if (!this.tryPlaceCurrentBuildingAt(path_array[end_idx].tile)) return null;
+
+                        return end_idx;
+                    } catch (error) {
+                        return null;
+                    } finally {
+                        this.currentBaseRotation = saved_rotation;
+                        this.currentVariant.set(saved_variant);
+                        this.currentMetaBuilding.set(saved_building);
+                    }
+                },
             };
         };
 
@@ -294,11 +396,11 @@
             },
             {
                 name: "Auto Tunnels",
-                description: "when you are building belt across another belf with shift , build tunnel instead of the belt that you are building",
+                description: "Uses the live underground-belt range table for conservative automatic tunnel placement during direction-locked belt building.",
                 website: "https://mod.io/g/shapez/m/auto-tunnels-remake",
                 id: "auto tunnels Remake",
-                version: "1.0.4",
-                author: "erjiu (modified by minimax, original by Sense_101)",
+                version: "1.1.0",
+                author: "erjiu, minimax & Sense_101; maintained by ct-yx & Codex",
                 settings: {},
                 modId: "6090358",
             }

@@ -3,7 +3,7 @@ const METADATA = {
     website: "https://github.com/ct-yx/shapez-mods",
     author: "ct-yx & Codex",
     name: "Factory Area Snapshot",
-    version: "1.1.0",
+    version: "1.2.0",
     id: "factory-area-snapshot",
     description: "Exports high-resolution tiled PNGs of the factory or a map-overview selection.",
     minimumGameVersion: ">=1.5.0",
@@ -32,6 +32,10 @@ const MAX_CANVAS_EDGE = 16384;
 const TILE_CORE_TARGET_PX = 2048;
 const TILE_BLEED_PX = 48;
 const CAPTURE_YIELD_MS = 0;
+// Above this size, a full final canvas would dominate memory even when its
+// PNG output is mostly empty/repetitive and therefore compresses very well.
+const STREAMING_PNG_MIN_MEGAPIXELS = 96;
+const STREAMING_STRIPE_HEIGHT_PX = 512;
 
 const STRINGS = {
     en: {
@@ -66,6 +70,7 @@ const STRINGS = {
         selectionExact: "Map selections export the exact dragged rectangle; outer padding applies to factory-area mode only.",
         rendering: "Rendering tile {current}/{total} · {percent}%",
         encoding: "Encoding PNG…",
+        streamingEncode: "Streaming PNG rows to keep the working canvas small…",
         done: "PNG download started.",
         cancelled: "Capture cancelled.",
         tooLarge: "This export area needs {needed}x or lower to stay within the image limit. Lower the render scale, reduce padding, or choose a larger image budget.",
@@ -112,6 +117,7 @@ const STRINGS = {
         selectionExact: "地图选区会严格按拖拽矩形导出；外围留白仅用于机器范围模式。",
         rendering: "正在渲染第 {current}/{total} 块 · {percent}%",
         encoding: "正在编码 PNG…",
+        streamingEncode: "正在流式编码 PNG，以保持较小的工作画布…",
         done: "已开始下载 PNG。",
         cancelled: "已取消截图。",
         tooLarge: "该截图范围需要降到 {needed}x 或更低才能符合图片限制。请降低渲染倍率、减少留白，或提高图片预算。",
@@ -1034,6 +1040,148 @@ class Mod extends shapez.Mod {
         return new Blob([bytes], { type: "image/png" });
     }
 
+    shouldUseStreamingPng(plan) {
+        return Boolean(
+            plan && plan.output
+            && plan.output.megapixels >= STREAMING_PNG_MIN_MEGAPIXELS
+            && typeof CompressionStream === "function"
+        );
+    }
+
+    getStreamingLayout(plan) {
+        const output = plan.output;
+        const stripeHeight = Math.min(STREAMING_STRIPE_HEIGHT_PX, output.heightPx);
+        const columns = Math.ceil(output.widthPx / output.coreWidthPx);
+        const rows = Math.ceil(output.heightPx / stripeHeight);
+        return {
+            stripeHeight,
+            columns,
+            rows,
+            tileCount: columns * rows,
+        };
+    }
+
+    updateCaptureProgress(capture, current, total) {
+        const percent = Math.min(100, Math.round(current / Math.max(1, total) * 100));
+        capture.status = this.t("rendering", { current, total, percent });
+        this.updateUI();
+    }
+
+    getPngCrcTable() {
+        if (this.pngCrcTable) return this.pngCrcTable;
+        const table = new Uint32Array(256);
+        for (let index = 0; index < 256; index++) {
+            let value = index;
+            for (let bit = 0; bit < 8; bit++) value = (value & 1) ? (0xedb88320 ^ (value >>> 1)) : (value >>> 1);
+            table[index] = value >>> 0;
+        }
+        this.pngCrcTable = table;
+        return table;
+    }
+
+    updatePngCrc(crc, bytes) {
+        const table = this.getPngCrcTable();
+        let value = crc >>> 0;
+        for (let index = 0; index < bytes.length; index++) value = table[(value ^ bytes[index]) & 0xff] ^ (value >>> 8);
+        return value >>> 0;
+    }
+
+    createPngChunk(type, data) {
+        const payload = data instanceof Uint8Array ? data : new Uint8Array(data || 0);
+        const typeBytes = new Uint8Array(4);
+        for (let index = 0; index < 4; index++) typeBytes[index] = String(type || "").charCodeAt(index) || 0;
+        const chunk = new Uint8Array(12 + payload.length);
+        const view = new DataView(chunk.buffer);
+        view.setUint32(0, payload.length);
+        chunk.set(typeBytes, 4);
+        chunk.set(payload, 8);
+        let crc = this.updatePngCrc(0xffffffff, typeBytes);
+        crc = this.updatePngCrc(crc, payload) ^ 0xffffffff;
+        view.setUint32(8 + payload.length, crc >>> 0);
+        return chunk;
+    }
+
+    createPngHeader(width, height) {
+        const payload = new Uint8Array(13);
+        const view = new DataView(payload.buffer);
+        view.setUint32(0, width);
+        view.setUint32(4, height);
+        payload[8] = 8; // 8-bit channels
+        payload[9] = 6; // RGBA
+        payload[10] = 0;
+        payload[11] = 0;
+        payload[12] = 0;
+        return this.createPngChunk("IHDR", payload);
+    }
+
+    // Builds a valid PNG without ever allocating a full-width × full-height
+    // canvas. Only a 512px-tall image strip and one render tile are alive at
+    // any time; this is especially valuable for sparse, very wide factories.
+    async createStreamedPngBlob(root, plan, tileCanvas, tileContext, capture) {
+        const output = plan.output;
+        const layout = this.getStreamingLayout(plan);
+        const compression = new CompressionStream("deflate");
+        const writer = compression.writable.getWriter();
+        const reader = compression.readable.getReader();
+        const parts = [
+            new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+            this.createPngHeader(output.widthPx, output.heightPx),
+        ];
+        const drain = (async () => {
+            for (;;) {
+                const packet = await reader.read();
+                if (packet.done) break;
+                if (packet.value && packet.value.length) parts.push(this.createPngChunk("IDAT", packet.value));
+            }
+        })();
+        let tileIndex = 0;
+        try {
+            for (let outputY = 0; outputY < output.heightPx; outputY += layout.stripeHeight) {
+                const stripeHeight = Math.min(layout.stripeHeight, output.heightPx - outputY);
+                const stripTiles = [];
+                for (let outputX = 0; outputX < output.widthPx; outputX += output.coreWidthPx) {
+                    if (capture.cancelled) throw new CaptureCancelledError();
+                    const tileWidth = Math.min(output.coreWidthPx, output.widthPx - outputX);
+                    this.renderTile(root, plan, tileCanvas, tileContext, outputX, outputY, tileWidth, stripeHeight);
+                    const pixels = tileContext.getImageData(
+                        TILE_BLEED_PX,
+                        TILE_BLEED_PX,
+                        tileWidth,
+                        stripeHeight
+                    ).data;
+                    stripTiles.push({ width: tileWidth, pixels });
+                    tileIndex += 1;
+                    this.updateCaptureProgress(capture, tileIndex, layout.tileCount);
+                    await this.yieldToBrowser();
+                }
+
+                const rowByteLength = output.widthPx * 4 + 1;
+                const scanlines = new Uint8Array(rowByteLength * stripeHeight);
+                for (let line = 0; line < stripeHeight; line++) {
+                    let destination = line * rowByteLength;
+                    scanlines[destination] = 0; // PNG filter: None
+                    destination += 1;
+                    for (const tile of stripTiles) {
+                        const start = line * tile.width * 4;
+                        const end = start + tile.width * 4;
+                        scanlines.set(tile.pixels.subarray(start, end), destination);
+                        destination += tile.width * 4;
+                    }
+                }
+                if (capture.cancelled) throw new CaptureCancelledError();
+                await writer.write(scanlines);
+            }
+            await writer.close();
+            await drain;
+            parts.push(this.createPngChunk("IEND", new Uint8Array(0)));
+            return new Blob(parts, { type: "image/png" });
+        } catch (error) {
+            try { await writer.abort(error); } catch (abortError) { }
+            try { await drain; } catch (drainError) { }
+            throw error;
+        }
+    }
+
     downloadBlob(blob, filename) {
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
@@ -1062,11 +1210,18 @@ class Mod extends shapez.Mod {
             return;
         }
 
+        const streamed = this.shouldUseStreamingPng(plan);
+        const streamingLayout = streamed ? this.getStreamingLayout(plan) : null;
         const capture = {
             active: true,
             cancelled: false,
             plan,
-            status: this.t("rendering", { current: 0, total: plan.output.tileCount, percent: 0 }),
+            streamed,
+            status: this.t("rendering", {
+                current: 0,
+                total: streamingLayout ? streamingLayout.tileCount : plan.output.tileCount,
+                percent: 0,
+            }),
         };
         this.capture = capture;
         this.updateUI();
@@ -1075,45 +1230,50 @@ class Mod extends shapez.Mod {
         let freezeSnapshot = null;
         try {
             freezeSnapshot = this.freezeGame(root);
-            finalCanvas = document.createElement("canvas");
-            finalCanvas.width = plan.output.widthPx;
-            finalCanvas.height = plan.output.heightPx;
-            const finalContext = finalCanvas.getContext("2d", { alpha: false });
-            if (!finalContext) throw new Error("final-canvas-context-unavailable");
-            finalContext.imageSmoothingEnabled = false;
             tileCanvas = document.createElement("canvas");
             const tileContext = tileCanvas.getContext("2d", { alpha: false });
             if (!tileContext) throw new Error("tile-canvas-context-unavailable");
+            let blob;
+            if (streamed) {
+                capture.status = this.t("streamingEncode");
+                this.updateUI();
+                blob = await this.createStreamedPngBlob(root, plan, tileCanvas, tileContext, capture);
+            } else {
+                finalCanvas = document.createElement("canvas");
+                finalCanvas.width = plan.output.widthPx;
+                finalCanvas.height = plan.output.heightPx;
+                const finalContext = finalCanvas.getContext("2d", { alpha: false });
+                if (!finalContext) throw new Error("final-canvas-context-unavailable");
+                finalContext.imageSmoothingEnabled = false;
 
-            let tileIndex = 0;
-            for (let outputY = 0; outputY < plan.output.heightPx; outputY += plan.output.coreWidthPx) {
-                const tileHeight = Math.min(plan.output.coreWidthPx, plan.output.heightPx - outputY);
-                for (let outputX = 0; outputX < plan.output.widthPx; outputX += plan.output.coreWidthPx) {
-                    if (capture.cancelled) throw new CaptureCancelledError();
-                    const tileWidth = Math.min(plan.output.coreWidthPx, plan.output.widthPx - outputX);
-                    this.renderTile(root, plan, tileCanvas, tileContext, outputX, outputY, tileWidth, tileHeight);
-                    finalContext.drawImage(
-                        tileCanvas,
-                        TILE_BLEED_PX,
-                        TILE_BLEED_PX,
-                        tileWidth,
-                        tileHeight,
-                        outputX,
-                        outputY,
-                        tileWidth,
-                        tileHeight
-                    );
-                    tileIndex += 1;
-                    const percent = Math.min(100, Math.round(tileIndex / plan.output.tileCount * 100));
-                    capture.status = this.t("rendering", { current: tileIndex, total: plan.output.tileCount, percent });
-                    this.updateUI();
-                    await this.yieldToBrowser();
+                let tileIndex = 0;
+                for (let outputY = 0; outputY < plan.output.heightPx; outputY += plan.output.coreWidthPx) {
+                    const tileHeight = Math.min(plan.output.coreWidthPx, plan.output.heightPx - outputY);
+                    for (let outputX = 0; outputX < plan.output.widthPx; outputX += plan.output.coreWidthPx) {
+                        if (capture.cancelled) throw new CaptureCancelledError();
+                        const tileWidth = Math.min(plan.output.coreWidthPx, plan.output.widthPx - outputX);
+                        this.renderTile(root, plan, tileCanvas, tileContext, outputX, outputY, tileWidth, tileHeight);
+                        finalContext.drawImage(
+                            tileCanvas,
+                            TILE_BLEED_PX,
+                            TILE_BLEED_PX,
+                            tileWidth,
+                            tileHeight,
+                            outputX,
+                            outputY,
+                            tileWidth,
+                            tileHeight
+                        );
+                        tileIndex += 1;
+                        this.updateCaptureProgress(capture, tileIndex, plan.output.tileCount);
+                        await this.yieldToBrowser();
+                    }
                 }
+                if (capture.cancelled) throw new CaptureCancelledError();
+                capture.status = this.t("encoding");
+                this.updateUI();
+                blob = await this.createPngBlob(finalCanvas);
             }
-            if (capture.cancelled) throw new CaptureCancelledError();
-            capture.status = this.t("encoding");
-            this.updateUI();
-            const blob = await this.createPngBlob(finalCanvas);
             if (capture.cancelled) throw new CaptureCancelledError();
             this.downloadBlob(
                 blob,

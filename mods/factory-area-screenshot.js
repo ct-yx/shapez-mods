@@ -3,7 +3,7 @@ const METADATA = {
     website: "https://github.com/ct-yx/shapez-mods",
     author: "ct-yx & Codex",
     name: "Factory Area Snapshot",
-    version: "1.4.0",
+    version: "1.5.0",
     id: "factory-area-snapshot",
     description: "Exports high-resolution tiled PNGs of the factory or a map-overview selection.",
     minimumGameVersion: ">=1.5.0",
@@ -11,6 +11,7 @@ const METADATA = {
     settings: {
         paddingTiles: 4,
         maxMegapixels: 64,
+        crispSampling: true,
         includeMovingItems: true,
         pauseDuringCapture: true,
     },
@@ -50,6 +51,7 @@ const STRINGS = {
         resolution: "Target resolution",
         resolutionHint: "total output pixels · render scale is automatic",
         tileUnit: "tiles",
+        crispSampling: "Crisp pixel sampling",
         items: "Include belt items",
         pause: "Pause simulation while rendering",
         inspect: "FACTORY AREA",
@@ -83,6 +85,7 @@ const STRINGS = {
         settingsDescription: "Exports the bounds of placed machines with a configurable safety margin. The export uses regular-camera rendering in tiles.",
         settingPadding: "Outer padding",
         settingResolution: "Target output resolution",
+        settingCrispSampling: "Crisp pixel sampling",
         settingItems: "Include moving belt items",
         settingPause: "Pause simulation while capturing",
     },
@@ -97,6 +100,7 @@ const STRINGS = {
         resolution: "目标分辨率",
         resolutionHint: "总输出像素 · 渲染倍率自动计算",
         tileUnit: "格",
+        crispSampling: "清晰像素采样",
         items: "包含传送带上的物品",
         pause: "渲染期间暂停模拟",
         inspect: "机器范围",
@@ -130,6 +134,7 @@ const STRINGS = {
         settingsDescription: "以已放置机器的边界加上可配置留白导出 PNG；使用普通镜头渲染路径并分块拼接。",
         settingPadding: "外围留白",
         settingResolution: "目标输出分辨率",
+        settingCrispSampling: "清晰像素采样",
         settingItems: "包含传送带上的动态物品",
         settingPause: "截图时暂停模拟",
     },
@@ -164,6 +169,7 @@ class Mod extends shapez.Mod {
 
         this.settings.paddingTiles = this.normalizePadding(this.settings.paddingTiles);
         this.settings.maxMegapixels = this.normalizeMegapixels(this.settings.maxMegapixels);
+        this.settings.crispSampling = this.settings.crispSampling !== false;
         this.settings.includeMovingItems = this.settings.includeMovingItems !== false;
         this.settings.pauseDuringCapture = this.settings.pauseDuringCapture !== false;
 
@@ -288,6 +294,17 @@ class Mod extends shapez.Mod {
                     onChange: value => this.applySetting("maxMegapixels", value),
                 },
                 {
+                    id: "crispSampling",
+                    type: "boolean",
+                    label: { en: STRINGS.en.settingCrispSampling, zh: STRINGS.zh.settingCrispSampling },
+                    description: {
+                        en: "Forces nearest-neighbor sampling for the game's sprite and cached-map draws. Keeps high-resolution exports sharp instead of filtering enlarged sprites.",
+                        zh: "对游戏精灵图和缓存地图绘制强制使用最近邻采样；高分辨率导出会保持清晰的像素边缘，而不是平滑放大后变糊。",
+                    },
+                    default: this.settings.crispSampling,
+                    onChange: value => this.applySetting("crispSampling", value),
+                },
+                {
                     id: "includeMovingItems",
                     type: "boolean",
                     label: { en: STRINGS.en.settingItems, zh: STRINGS.zh.settingItems },
@@ -314,6 +331,7 @@ class Mod extends shapez.Mod {
 
         this.settings.paddingTiles = this.normalizePadding(this.settingsPanel.get("paddingTiles"));
         this.settings.maxMegapixels = this.normalizeMegapixels(this.settingsPanel.get("maxMegapixels"));
+        this.settings.crispSampling = this.settingsPanel.get("crispSampling") !== false;
         this.settings.includeMovingItems = this.settingsPanel.get("includeMovingItems") !== false;
         this.settings.pauseDuringCapture = this.settingsPanel.get("pauseDuringCapture") !== false;
     }
@@ -321,6 +339,7 @@ class Mod extends shapez.Mod {
     applySetting(key, value) {
         if (key === "paddingTiles") this.settings.paddingTiles = this.normalizePadding(value);
         else if (key === "maxMegapixels") this.settings.maxMegapixels = this.normalizeMegapixels(value);
+        else if (key === "crispSampling") this.settings.crispSampling = Boolean(value);
         else if (key === "includeMovingItems") this.settings.includeMovingItems = Boolean(value);
         else if (key === "pauseDuringCapture") this.settings.pauseDuringCapture = Boolean(value);
         try { this.saveSettings(); } catch (error) { }
@@ -353,6 +372,10 @@ class Mod extends shapez.Mod {
         return this.normalizeMegapixels(this.getSetting("maxMegapixels"));
     }
 
+    getCrispSampling() {
+        return this.getSetting("crispSampling") !== false;
+    }
+
     getIncludeMovingItems() {
         return this.getSetting("includeMovingItems") !== false;
     }
@@ -382,6 +405,7 @@ class Mod extends shapez.Mod {
                 <div class="fas-controls">
                     <label class="fas-control fas-padding-control"><span class="fas-label padding-label"></span><input class="fas-padding" type="range" min="0" max="32" step="1"><output class="fas-padding-value"></output><small class="fas-padding-hint"></small></label>
                     <label class="fas-control fas-resolution-control"><span class="fas-label resolution-label"></span><select class="fas-resolution"><option value="16">16 MP</option><option value="32">32 MP</option><option value="48">48 MP</option><option value="64">64 MP</option><option value="96">96 MP</option><option value="128">128 MP</option><option value="192">192 MP</option><option value="256">256 MP</option><option value="384">384 MP</option><option value="512">512 MP</option><option value="768">768 MP</option><option value="1024">1024 MP</option></select><small class="fas-resolution-hint"></small></label>
+                    <label class="fas-check fas-crisp-check"><input class="fas-crisp" type="checkbox"><span class="fas-crisp-text"></span></label>
                     <label class="fas-check"><input class="fas-items" type="checkbox"><span class="fas-items-text"></span></label>
                     <label class="fas-check"><input class="fas-pause" type="checkbox"><span class="fas-pause-text"></span></label>
                 </div>
@@ -409,6 +433,7 @@ class Mod extends shapez.Mod {
             paddingHint: container.querySelector(".fas-padding-hint"),
             resolution: container.querySelector(".fas-resolution"),
             resolutionHint: container.querySelector(".fas-resolution-hint"),
+            crisp: container.querySelector(".fas-crisp"),
             items: container.querySelector(".fas-items"),
             pause: container.querySelector(".fas-pause"),
             analysis: container.querySelector(".fas-analysis"),
@@ -428,6 +453,7 @@ class Mod extends shapez.Mod {
         this.elements.close.addEventListener("click", () => this.setPanelOpen(false));
         this.elements.padding.addEventListener("input", () => this.setSetting("paddingTiles", this.elements.padding.value));
         this.elements.resolution.addEventListener("change", () => this.setSetting("maxMegapixels", this.elements.resolution.value));
+        this.elements.crisp.addEventListener("change", () => this.setSetting("crispSampling", this.elements.crisp.checked));
         this.elements.items.addEventListener("change", () => this.setSetting("includeMovingItems", this.elements.items.checked));
         this.elements.pause.addEventListener("change", () => this.setSetting("pauseDuringCapture", this.elements.pause.checked));
         this.elements.analyze.addEventListener("click", () => this.analyzeFactoryArea());
@@ -480,10 +506,13 @@ class Mod extends shapez.Mod {
         e.paddingValue.textContent = this.getPaddingTiles() + " " + this.t("tileUnit");
         e.resolution.value = String(this.getMaxMegapixels());
         e.resolution.disabled = active;
+        e.crisp.checked = this.getCrispSampling();
+        e.crisp.disabled = active;
         e.items.checked = this.getIncludeMovingItems();
         e.items.disabled = active;
         e.pause.checked = this.getPauseDuringCapture();
         e.pause.disabled = active;
+        e.container.querySelector(".fas-crisp-text").textContent = this.t("crispSampling");
         e.container.querySelector(".fas-items-text").textContent = this.t("items");
         e.container.querySelector(".fas-pause-text").textContent = this.t("pause");
         e.analyze.textContent = this.t("inspect");
@@ -969,6 +998,61 @@ class Mod extends shapez.Mod {
         await new Promise(resolve => setTimeout(resolve, CAPTURE_YIELD_MS));
     }
 
+    withCrispSampling(context, draw) {
+        if (!this.getCrispSampling() || !context) return draw();
+        const previousSmoothing = context.imageSmoothingEnabled;
+        const previousWebkitSmoothing = context.webkitImageSmoothingEnabled;
+        const originalDrawImage = typeof context.drawImage === "function" ? context.drawImage : null;
+        let patchedDrawImage = false;
+        const forceNearest = () => {
+            context.imageSmoothingEnabled = false;
+            if ("webkitImageSmoothingEnabled" in context) context.webkitImageSmoothingEnabled = false;
+        };
+        forceNearest();
+        // Several shapez map paths enable smoothing around cached buffers. Patch
+        // only this temporary export context so every actual blit stays crisp.
+        if (originalDrawImage) {
+            try {
+                context.drawImage = function (...args) {
+                    forceNearest();
+                    return originalDrawImage.apply(this, args);
+                };
+                patchedDrawImage = context.drawImage !== originalDrawImage;
+            } catch (error) { }
+        }
+        try {
+            return draw();
+        } finally {
+            if (patchedDrawImage) {
+                try { context.drawImage = originalDrawImage; } catch (error) { }
+            }
+            context.imageSmoothingEnabled = previousSmoothing;
+            if ("webkitImageSmoothingEnabled" in context) context.webkitImageSmoothingEnabled = previousWebkitSmoothing;
+        }
+    }
+
+    readTilePixels(renderCanvas, readbackCanvas, readbackContext, tileWidth, tileHeight) {
+        if (!readbackCanvas || !readbackContext) return null;
+        if (readbackCanvas.width !== tileWidth) readbackCanvas.width = tileWidth;
+        if (readbackCanvas.height !== tileHeight) readbackCanvas.height = tileHeight;
+        readbackContext.setTransform(1, 0, 0, 1, 0, 0);
+        readbackContext.imageSmoothingEnabled = false;
+        if ("webkitImageSmoothingEnabled" in readbackContext) readbackContext.webkitImageSmoothingEnabled = false;
+        readbackContext.clearRect(0, 0, tileWidth, tileHeight);
+        readbackContext.drawImage(
+            renderCanvas,
+            TILE_BLEED_PX,
+            TILE_BLEED_PX,
+            tileWidth,
+            tileHeight,
+            0,
+            0,
+            tileWidth,
+            tileHeight
+        );
+        return readbackContext.getImageData(0, 0, tileWidth, tileHeight).data;
+    }
+
     renderTile(root, plan, tileCanvas, tileContext, destinationX, destinationY, tileWidth, tileHeight) {
         const output = plan.output;
         const zoom = output.effectiveScale;
@@ -991,12 +1075,14 @@ class Mod extends shapez.Mod {
         tileContext.setTransform(zoom, 0, 0, zoom, TILE_BLEED_PX - worldStartX * zoom, TILE_BLEED_PX - worldStartY * zoom);
         const parameters = this.createDrawParameters(tileContext, visibleRect, zoom, root);
         this.resetRendererDeduplication(root);
-        root.map.drawBackground(parameters);
-        const beltSystem = root.systemMgr && root.systemMgr.systems && root.systemMgr.systems.belt;
-        if (this.getIncludeMovingItems() && beltSystem && typeof beltSystem.drawBeltItems === "function") beltSystem.drawBeltItems(parameters);
-        root.map.drawForeground(parameters);
-        const hubSystem = root.systemMgr && root.systemMgr.systems && root.systemMgr.systems.hub;
-        if (hubSystem && typeof hubSystem.draw === "function") hubSystem.draw(parameters);
+        this.withCrispSampling(tileContext, () => {
+            root.map.drawBackground(parameters);
+            const beltSystem = root.systemMgr && root.systemMgr.systems && root.systemMgr.systems.belt;
+            if (this.getIncludeMovingItems() && beltSystem && typeof beltSystem.drawBeltItems === "function") beltSystem.drawBeltItems(parameters);
+            root.map.drawForeground(parameters);
+            const hubSystem = root.systemMgr && root.systemMgr.systems && root.systemMgr.systems.hub;
+            if (hubSystem && typeof hubSystem.draw === "function") hubSystem.draw(parameters);
+        });
         tileContext.setTransform(1, 0, 0, 1, 0, 0);
     }
 
@@ -1095,7 +1181,13 @@ class Mod extends shapez.Mod {
     // Builds a valid PNG without ever allocating a full-width × full-height
     // canvas. Only a 512px-tall image strip and one render tile are alive at
     // any time; this is especially valuable for sparse, very wide factories.
-    async createStreamedPngBlob(root, plan, tileCanvas, tileContext, capture) {
+    async createStreamedPngBlob(root, plan, tileCanvas, tileContext, readbackCanvas, readbackContext, capture) {
+        // Keep the old five-argument form usable for unit tests and older hooks.
+        if (!capture) {
+            capture = readbackCanvas;
+            readbackCanvas = null;
+            readbackContext = null;
+        }
         const output = plan.output;
         const layout = this.getStreamingLayout(plan);
         const compression = new CompressionStream("deflate");
@@ -1121,7 +1213,15 @@ class Mod extends shapez.Mod {
                     if (capture.cancelled) throw new CaptureCancelledError();
                     const tileWidth = Math.min(output.coreWidthPx, output.widthPx - outputX);
                     this.renderTile(root, plan, tileCanvas, tileContext, outputX, outputY, tileWidth, stripeHeight);
-                    const pixels = tileContext.getImageData(
+                    // Render tiles stay GPU-preferred. Read pixels through a
+                    // separate CPU-oriented canvas only when encoding PNG rows.
+                    const pixels = this.readTilePixels(
+                        tileCanvas,
+                        readbackCanvas,
+                        readbackContext,
+                        tileWidth,
+                        stripeHeight
+                    ) || tileContext.getImageData(
                         TILE_BLEED_PX,
                         TILE_BLEED_PX,
                         tileWidth,
@@ -1205,17 +1305,40 @@ class Mod extends shapez.Mod {
         this.updateUI();
         let finalCanvas = null;
         let tileCanvas = null;
+        let readbackCanvas = null;
         let freezeSnapshot = null;
         try {
             freezeSnapshot = this.freezeGame(root);
             tileCanvas = document.createElement("canvas");
-            const tileContext = tileCanvas.getContext("2d", { alpha: false });
+            // This canvas has no pixel readback, so Chromium can keep the game
+            // drawing path GPU-preferred where the platform supports it.
+            const tileContext = tileCanvas.getContext("2d", {
+                alpha: false,
+                desynchronized: true,
+                willReadFrequently: false,
+            });
             if (!tileContext) throw new Error("tile-canvas-context-unavailable");
             let blob;
             if (streamed) {
+                // PNG encoding ultimately requires CPU bytes. Isolate that readback
+                // from the render canvas instead of forcing each map tile software-side.
+                readbackCanvas = document.createElement("canvas");
+                const readbackContext = readbackCanvas.getContext("2d", {
+                    alpha: false,
+                    willReadFrequently: true,
+                });
+                if (!readbackContext) throw new Error("readback-canvas-context-unavailable");
                 capture.status = this.t("streamingEncode");
                 this.updateUI();
-                blob = await this.createStreamedPngBlob(root, plan, tileCanvas, tileContext, capture);
+                blob = await this.createStreamedPngBlob(
+                    root,
+                    plan,
+                    tileCanvas,
+                    tileContext,
+                    readbackCanvas,
+                    readbackContext,
+                    capture
+                );
             } else {
                 finalCanvas = document.createElement("canvas");
                 finalCanvas.width = plan.output.widthPx;
@@ -1270,6 +1393,7 @@ class Mod extends shapez.Mod {
         } finally {
             this.restoreGame(freezeSnapshot);
             if (tileCanvas) { tileCanvas.width = 0; tileCanvas.height = 0; }
+            if (readbackCanvas) { readbackCanvas.width = 0; readbackCanvas.height = 0; }
             if (finalCanvas) { finalCanvas.width = 0; finalCanvas.height = 0; }
             capture.active = false;
             if (this.capture === capture) this.capture = null;
@@ -1374,6 +1498,7 @@ class Mod extends shapez.Mod {
             .fas-control small { min-height: 20px; color: #8daab5; font-size: 8px; line-height: 1.26; }
             .fas-control select { width: 100%; height: 29px; padding: 0 6px; border: 1px solid #537987; border-radius: 2px; outline: none; background: #12212a; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .46); color: #effaff; cursor: pointer; font-size: 11px; font-weight: 850; }
             .fas-control select:focus { border-color: var(--fas-blue-hi); box-shadow: 0 0 0 1px rgba(113, 220, 250, .26); }
+            .fas-crisp-check { grid-column: 1 / -1; }
             .fas-check { display: flex; align-items: center; gap: 7px; min-height: 34px; padding: 7px 8px; color: #d1e1e6; cursor: pointer; font-size: 9px; font-weight: 750; line-height: 1.15; user-select: none; }
             .fas-check input { width: 14px; height: 14px; flex: 0 0 auto; margin: 0; accent-color: #50bce6; cursor: pointer; }
             .fas-analysis { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin: 9px 10px 0; padding-top: 8px; border-top: 1px solid #304650; }

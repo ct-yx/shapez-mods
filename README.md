@@ -1,6 +1,6 @@
 # shapez.io Mods Collection
 
-> 面向 **shapez.io 一代** 的中文 Mod 整合包：物流扩展、快捷建造、原生设置页、地图预览与工厂性能压测。
+> 面向 **shapez.io 一代** 的中文 Mod 整合包：物流扩展、快捷建造、原生设置页、地图预览、高分辨率工厂截图与性能压测。
 
 [![GitHub Pages](https://img.shields.io/badge/展示站-GitHub%20Pages-66c4ff?style=flat-square)](https://ct-yx.github.io/shapez-mods/)
 [![shapez.io](https://img.shields.io/badge/shapez.io-1.x-48edd2?style=flat-square)](https://shapez.io/)
@@ -14,18 +14,18 @@
 
 ## 整合包内容
 
-| 分类 | Mod | 一句话介绍 | 独立介绍 |
-| --- | --- | --- | --- |
-| 基础设施 | `structured-mod-settings.js` | 在游戏原生设置页提供统一的「游戏模组（MODS）」分类和持久化设置 API。 | [查看](docs/mods/structured-mod-settings.md) |
-| 物流 | `belt_speed_10x.js` | 传送带 1–50× 调速；地下传送带扩展至四级，距离独立设置，并同步原版平衡器与读取器。 | [查看](docs/mods/belt-speed-control.md) |
-| 物流 | `balancer-variants.js` | 原版平衡器新增 4 / 5 / 8 / 10 / 16 路变形体。 | [查看](docs/mods/balancer-variants.md) |
-| 建造 | `key-reform.js` | 使用 T/R + 数字键或滚轮快速切换变形体和朝向。 | [查看](docs/mods/key-reform.md) |
-| 视图 | `zoomout-before-mapmode.js` | 放大进入地图总览前的缩放范围，并简化低缩放时的传送带渲染。 | [查看](docs/mods/zoomout-before-mapmode.md) |
-| 性能 | `factory-stress-lab.js` | 无上限倍率、40 FPS 自适应 Benchmark、性能曲线与报告导出。 | [查看](docs/mods/factory-stress-lab.md) |
-| 视图 / 工具 | `factory-area-screenshot.js` | 以普通镜头分块导出机器范围或地图总览框选区域的高分辨率 PNG。 | [查看](docs/mods/factory-area-snapshot.md) |
-| 建造 | `auto-tunnels@1.0.4.js` | 方向锁定铺传送带时，按实时长度自动选择地下传送带跨越连续障碍，兼容多路平衡器。 | [查看](docs/mods/auto-tunnels.md) |
-| 建造 | `extractor_chain.js` | 拖动时连续放置链式采矿机，并按路径自动调整朝向。 | [查看](docs/mods/chainable-extractors.md) |
-| 测试 | `sandbox.js` | 解锁全部奖励并将蓝图成本归零，适合验证布局与压力测试。 | [查看](docs/mods/sandbox.md) |
+| 分类 | Mod | 版本 | 一句话介绍 | 独立介绍 |
+| --- | --- | --- | --- | --- |
+| 基础设施 | `structured-mod-settings.js` | 1.0.1 | 原生 MODS 分类、结构化字段、持久化、语言切换和重载按钮。 | [查看](docs/mods/structured-mod-settings.md) |
+| 物流 | `belt_speed_10x.js` | 1.4.0 | 传送带 1–50× 调速；地下传送带四级距离独立设置，并同步平衡器与读取器。 | [查看](docs/mods/belt-speed-control.md) |
+| 物流 | `balancer-variants.js` | 1.0.4 | 原版平衡器新增 4 / 5 / 8 / 10 / 16 路变形体，修正多路贴图比例。 | [查看](docs/mods/balancer-variants.md) |
+| 建造 | `key-reform.js` | 1.1.8 | 使用 T/R + 数字键或标准化滚轮快速切换变形体和朝向。 | [查看](docs/mods/key-reform.md) |
+| 视图 | `zoomout-before-mapmode.js` | 1.5.1 | 扩大地图总览前缩放范围，并在低缩放时合并/简化传送带物品。 | [查看](docs/mods/zoomout-before-mapmode.md) |
+| 性能 | `factory-stress-lab.js` | 2.4.0 | 无上限倍率、40 FPS 自适应 Benchmark、10 分钟普通曲线与三种报告。 | [查看](docs/mods/factory-stress-lab.md) |
+| 视图 / 工具 | `factory-area-screenshot.js` | 2.0.0 | 低/中/高质量预设、清晰像素采样、普通镜头分块和流式高分辨率 PNG。 | [查看](docs/mods/factory-area-snapshot.md) |
+| 建造 | `auto-tunnels@1.0.4.js` | 1.1.0 | 方向锁定铺带时按实时长度选地下传送带跨越连续障碍，兼容多路平衡器。 | [查看](docs/mods/auto-tunnels.md) |
+| 建造 | `extractor_chain.js` | 1 | 拖动时连续放置链式采矿机，并按路径自动调整朝向。 | [查看](docs/mods/chainable-extractors.md) |
+| 测试 | `sandbox.js` | 1 | 解锁全部奖励并将蓝图成本归零，适合验证布局与压力测试。 | [查看](docs/mods/sandbox.md) |
 
 ## 安装
 
@@ -36,6 +36,16 @@
 4. 启用了 `structured-mod-settings.js` 后，进入 **设置 → 游戏模组（MODS）** 配置支持设置项的 Mod。
 
 > 每个文件可以单独使用。想要配置传送带速度、快捷键或地图预览时，同时启用 `structured-mod-settings.js`。
+
+## 默认值与快捷键速查
+
+| Mod | 默认行为 |
+| --- | --- |
+| Belt Speed Control | 每级 10×；倍率范围 1–50×。一级至四级地下传送带范围默认保持原版，分别可调到原版的 1–10×；实际吞吐超过 15 items/s 时默认冻结动画。 |
+| Key Reform | `T + 数字键` 选变形体，`R + 1/2/3/4` 设上/右/下/左方向；按住 `T/R` 滚轮可循环切换。 |
+| Zoom out before Mapmode | 进入地图总览前可缩小到原版范围的 2×；实际镜头缩放 ≤ 0.5× 时默认只显示传送带首尾物品。 |
+| Factory Stress Lab | 手动倍率可输入任意正数；`Shift + T` 切换 Turbo 100×，`[` / `]` 以 1× 调整。 Benchmark 从 200× 起步，目标 38–42 FPS，支持 120 s / 900 s，结束回到 3×。 |
+| Factory Area Snapshot | 选区质量默认 16 / 48 / 256 MP，选区上限分别为 48×48 / 128×128 / 1024×1024 格；整地图默认高质量并添加 10 格留白。 |
 
 ## 推荐组合
 
@@ -70,7 +80,8 @@
 - **Sandbox** 会让所有奖励解锁、蓝图免费；建议使用独立测试存档，避免干扰正常进度。
 - **Auto Tunnels** 和 **Chainable Extractors** 会扩展游戏建造器逻辑；若使用其他同类建造 Mod，建议先在测试存档验证组合效果。
 - 低缩放时的传送带简化渲染仅影响视觉表现，不改变物流模拟。
-- **Factory Area Snapshot** 只读取已放置机器范围并写出本地 PNG；会在截图期间暂时暂停模拟（可关闭），结束后恢复原速度与图层。
+- **Factory Area Snapshot** 支持已放置机器范围和地图总览框选两种来源：选区不添加外围留白，整地图会按普通层机器边界添加留白；默认在截图期间暂停模拟（可关闭），结束后恢复原速度与图层。
+- **Factory Stress Lab** 的普通性能详情在收起时停止并清空曲线，Benchmark 样本独立保留；机器压力指数是比较指标，不是硬件功耗。
 
 ## 报告示例
 
@@ -91,7 +102,7 @@ shapez-mods/
 │   ├── assets/screenshots/
 │   └── assets/download-latest.js
 ├── reports/               # Factory Stress Lab 报告样本
-└── .github/workflows/     # GitHub Pages 自动部署工作流
+└── .github/workflows/     # Pages 部署与动态整合包发布工作流
 ```
 
 ## 发布展示站

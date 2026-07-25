@@ -3,15 +3,16 @@ const METADATA = {
     website: "https://github.com/ct-yx/shapez-mods",
     author: "ct-yx & Codex",
     name: "Factory Area Snapshot",
-    version: "1.7.0",
+    version: "1.8.0",
     id: "factory-area-snapshot",
-    description: "Exports high-resolution factory PNGs through density-calibrated, GPU-preferred capture partitions.",
+    description: "Exports high-resolution factory PNGs through density-calibrated, activity-aware capture partitions.",
     minimumGameVersion: ">=1.5.0",
     doesNotAffectSavegame: true,
     settings: {
         paddingTiles: 4,
         maxMegapixels: 64,
         crispSampling: true,
+        smartSparseRegions: true,
         includeMovingItems: true,
         pauseDuringCapture: true,
     },
@@ -48,6 +49,11 @@ const MAX_CAPTURE_GRID_CELLS = 1024;
 // Above this zoom, shapez uses the same sprite-atlas tier and only filters it.
 // Render a crisp native source, then let the GPU scale it during final composition.
 const MAX_SHARP_SOURCE_SCALE = 1;
+// Empty/original map regions are rendered from this lower source resolution,
+// then nearest-neighbour composed into the final PNG. Constructed regions stay
+// at the normal crisp source scale.
+const MIN_SPARSE_SOURCE_SCALE = 0.5;
+const ACTIVITY_MARGIN_TILES = 2;
 
 const STRINGS = {
     en: {
@@ -77,6 +83,8 @@ const STRINGS = {
         sourceScale: "Crisp source / output",
         chunks: "Capture partitions",
         partitionTarget: "target {count}",
+        activity: "Built / sparse regions",
+        activityValue: "{active} / {sparse}",
         waiting: "Analyze the placed factory area before exporting.",
         ready: "Ready. Rendering uses density-calibrated, aspect-aware capture partitions.",
         selectionArmed: "Map selection is armed. Zoom into Map Overview, then left-drag a rectangle.",
@@ -98,6 +106,7 @@ const STRINGS = {
         settingPadding: "Outer padding",
         settingResolution: "Target output resolution",
         settingCrispSampling: "Crisp pixel sampling",
+        settingSmartSparseRegions: "Smart sparse regions",
         settingItems: "Include moving belt items",
         settingPause: "Pause simulation while capturing",
     },
@@ -128,6 +137,8 @@ const STRINGS = {
         sourceScale: "清晰源 / 最终倍率",
         chunks: "分区捕获",
         partitionTarget: "目标 {count}",
+        activity: "建造 / 稀疏分区",
+        activityValue: "{active} / {sparse}",
         waiting: "先分析已放置机器的范围，再导出截图。",
         ready: "已就绪。截图将按 256 MP 基准密度和长宽比划分分区进行渲染与拼接。",
         selectionArmed: "选区已准备：缩小进入地图总览后，用左键拖拽一个矩形范围。",
@@ -149,6 +160,7 @@ const STRINGS = {
         settingPadding: "外围留白",
         settingResolution: "目标输出分辨率",
         settingCrispSampling: "清晰像素采样",
+        settingSmartSparseRegions: "智能稀疏分区",
         settingItems: "包含传送带上的动态物品",
         settingPause: "截图时暂停模拟",
     },
@@ -184,6 +196,7 @@ class Mod extends shapez.Mod {
         this.settings.paddingTiles = this.normalizePadding(this.settings.paddingTiles);
         this.settings.maxMegapixels = this.normalizeMegapixels(this.settings.maxMegapixels);
         this.settings.crispSampling = this.settings.crispSampling !== false;
+        this.settings.smartSparseRegions = this.settings.smartSparseRegions !== false;
         this.settings.includeMovingItems = this.settings.includeMovingItems !== false;
         this.settings.pauseDuringCapture = this.settings.pauseDuringCapture !== false;
 
@@ -319,6 +332,17 @@ class Mod extends shapez.Mod {
                     onChange: value => this.applySetting("crispSampling", value),
                 },
                 {
+                    id: "smartSparseRegions",
+                    type: "boolean",
+                    label: { en: STRINGS.en.settingSmartSparseRegions, zh: STRINGS.zh.settingSmartSparseRegions },
+                    description: {
+                        en: "Prioritizes placed-machine regions. Empty or original map regions use a lower source resolution before nearest-neighbor composition, reducing render work and helping PNG compression.",
+                        zh: "优先保证放置机器区域的清晰度。未放置机器的空白或原生区域会以较低源分辨率渲染后再最近邻合成，从而减少渲染工作并提高 PNG 压缩空间。",
+                    },
+                    default: this.settings.smartSparseRegions,
+                    onChange: value => this.applySetting("smartSparseRegions", value),
+                },
+                {
                     id: "includeMovingItems",
                     type: "boolean",
                     label: { en: STRINGS.en.settingItems, zh: STRINGS.zh.settingItems },
@@ -346,6 +370,7 @@ class Mod extends shapez.Mod {
         this.settings.paddingTiles = this.normalizePadding(this.settingsPanel.get("paddingTiles"));
         this.settings.maxMegapixels = this.normalizeMegapixels(this.settingsPanel.get("maxMegapixels"));
         this.settings.crispSampling = this.settingsPanel.get("crispSampling") !== false;
+        this.settings.smartSparseRegions = this.settingsPanel.get("smartSparseRegions") !== false;
         this.settings.includeMovingItems = this.settingsPanel.get("includeMovingItems") !== false;
         this.settings.pauseDuringCapture = this.settingsPanel.get("pauseDuringCapture") !== false;
     }
@@ -354,6 +379,7 @@ class Mod extends shapez.Mod {
         if (key === "paddingTiles") this.settings.paddingTiles = this.normalizePadding(value);
         else if (key === "maxMegapixels") this.settings.maxMegapixels = this.normalizeMegapixels(value);
         else if (key === "crispSampling") this.settings.crispSampling = Boolean(value);
+        else if (key === "smartSparseRegions") this.settings.smartSparseRegions = Boolean(value);
         else if (key === "includeMovingItems") this.settings.includeMovingItems = Boolean(value);
         else if (key === "pauseDuringCapture") this.settings.pauseDuringCapture = Boolean(value);
         try { this.saveSettings(); } catch (error) { }
@@ -390,6 +416,10 @@ class Mod extends shapez.Mod {
         return this.getSetting("crispSampling") !== false;
     }
 
+    getSmartSparseRegions() {
+        return this.getSetting("smartSparseRegions") !== false;
+    }
+
     getIncludeMovingItems() {
         return this.getSetting("includeMovingItems") !== false;
     }
@@ -420,6 +450,7 @@ class Mod extends shapez.Mod {
                     <label class="fas-control fas-padding-control"><span class="fas-label padding-label"></span><input class="fas-padding" type="range" min="0" max="32" step="1"><output class="fas-padding-value"></output><small class="fas-padding-hint"></small></label>
                     <label class="fas-control fas-resolution-control"><span class="fas-label resolution-label"></span><select class="fas-resolution"><option value="16">16 MP</option><option value="32">32 MP</option><option value="48">48 MP</option><option value="64">64 MP</option><option value="96">96 MP</option><option value="128">128 MP</option><option value="192">192 MP</option><option value="256">256 MP</option><option value="384">384 MP</option><option value="512">512 MP</option><option value="768">768 MP</option><option value="1024">1024 MP</option></select><small class="fas-resolution-hint"></small></label>
                     <label class="fas-check fas-crisp-check"><input class="fas-crisp" type="checkbox"><span class="fas-crisp-text"></span></label>
+                    <label class="fas-check fas-sparse-check"><input class="fas-sparse" type="checkbox"><span class="fas-sparse-text"></span></label>
                     <label class="fas-check"><input class="fas-items" type="checkbox"><span class="fas-items-text"></span></label>
                     <label class="fas-check"><input class="fas-pause" type="checkbox"><span class="fas-pause-text"></span></label>
                 </div>
@@ -448,6 +479,7 @@ class Mod extends shapez.Mod {
             resolution: container.querySelector(".fas-resolution"),
             resolutionHint: container.querySelector(".fas-resolution-hint"),
             crisp: container.querySelector(".fas-crisp"),
+            sparse: container.querySelector(".fas-sparse"),
             items: container.querySelector(".fas-items"),
             pause: container.querySelector(".fas-pause"),
             analysis: container.querySelector(".fas-analysis"),
@@ -468,6 +500,7 @@ class Mod extends shapez.Mod {
         this.elements.padding.addEventListener("input", () => this.setSetting("paddingTiles", this.elements.padding.value));
         this.elements.resolution.addEventListener("change", () => this.setSetting("maxMegapixels", this.elements.resolution.value));
         this.elements.crisp.addEventListener("change", () => this.setSetting("crispSampling", this.elements.crisp.checked));
+        this.elements.sparse.addEventListener("change", () => this.setSetting("smartSparseRegions", this.elements.sparse.checked));
         this.elements.items.addEventListener("change", () => this.setSetting("includeMovingItems", this.elements.items.checked));
         this.elements.pause.addEventListener("change", () => this.setSetting("pauseDuringCapture", this.elements.pause.checked));
         this.elements.analyze.addEventListener("click", () => this.analyzeFactoryArea());
@@ -522,11 +555,14 @@ class Mod extends shapez.Mod {
         e.resolution.disabled = active;
         e.crisp.checked = this.getCrispSampling();
         e.crisp.disabled = active;
+        e.sparse.checked = this.getSmartSparseRegions();
+        e.sparse.disabled = active || !this.getCrispSampling();
         e.items.checked = this.getIncludeMovingItems();
         e.items.disabled = active;
         e.pause.checked = this.getPauseDuringCapture();
         e.pause.disabled = active;
         e.container.querySelector(".fas-crisp-text").textContent = this.t("crispSampling");
+        e.container.querySelector(".fas-sparse-text").textContent = this.t("settingSmartSparseRegions");
         e.container.querySelector(".fas-items-text").textContent = this.t("items");
         e.container.querySelector(".fas-pause-text").textContent = this.t("pause");
         e.analyze.textContent = this.t("inspect");
@@ -552,13 +588,18 @@ class Mod extends shapez.Mod {
         const machine = analysis.machineBounds;
         const output = analysis.output;
         const area = analysis.bounds;
+        const activity = output.activity;
+        const activityRow = activity
+            ? `<div><span>${this.escapeHtml(this.t("activity"))}</span><strong>${this.escapeHtml(this.t("activityValue", { active: activity.activeCount, sparse: activity.sparseCount }))}</strong></div>`
+            : "";
         return `
             <div><span>${this.escapeHtml(analysis.source === "selection" ? this.t("selectedArea") : this.t("machineArea"))}</span><strong>${machine.w} × ${machine.h}</strong></div>
             <div><span>${this.escapeHtml(this.t("exportArea"))}</span><strong>${area.w} × ${area.h}</strong></div>
             <div><span>${this.escapeHtml(this.t("output"))}</span><strong>${output.widthPx.toLocaleString()} × ${output.heightPx.toLocaleString()}</strong></div>
             <div><span>${this.escapeHtml(this.t("scaleResult"))}</span><strong>${this.formatScale(output.effectiveScale)}x · ${this.formatMegapixels(output.megapixels)} MP</strong></div>
             <div><span>${this.escapeHtml(this.t("sourceScale"))}</span><strong>${this.formatScale(output.sourceScale)}x → ${this.formatScale(output.effectiveScale)}x</strong></div>
-            <div><span>${this.escapeHtml(this.t("chunks"))}</span><strong>${output.captureGrid.columns} × ${output.captureGrid.rows} = ${output.captureGrid.count} · ${this.escapeHtml(this.t("partitionTarget", { count: output.captureGrid.preferred }))}</strong></div>`;
+            <div><span>${this.escapeHtml(this.t("chunks"))}</span><strong>${output.captureGrid.columns} × ${output.captureGrid.rows} = ${output.captureGrid.count} · ${this.escapeHtml(this.t("partitionTarget", { count: output.captureGrid.preferred }))}</strong></div>
+            ${activityRow}`;
     }
 
     escapeHtml(value) {
@@ -590,35 +631,74 @@ class Mod extends shapez.Mod {
         return entities.filter(entity => entity && entity.components && entity.components.StaticMapEntity);
     }
 
+    getRegularStaticEntityBounds(entity) {
+        // Generated resource patches are not regular-layer StaticMapEntities;
+        // this intentionally tracks the placed factory objects that need detail.
+        if (entity && entity.layer && entity.layer !== "regular") return null;
+        const staticMapEntity = entity && entity.components && entity.components.StaticMapEntity;
+        if (!staticMapEntity || typeof staticMapEntity.getTileSpaceBounds !== "function") return null;
+        let bounds;
+        try { bounds = staticMapEntity.getTileSpaceBounds(); } catch (error) { return null; }
+        if (!bounds) return null;
+        const x = Number(bounds.x);
+        const y = Number(bounds.y);
+        const w = Number(bounds.w);
+        const h = Number(bounds.h);
+        if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0) return null;
+        return { x, y, w, h };
+    }
+
+    getPlacedEntityBounds(root) {
+        const bounds = [];
+        for (const entity of this.getStaticEntities(root)) {
+            const entityBounds = this.getRegularStaticEntityBounds(entity);
+            if (entityBounds) bounds.push(entityBounds);
+        }
+        return bounds;
+    }
+
     computeMachineBounds(root) {
-        const entities = this.getStaticEntities(root);
+        const entities = this.getPlacedEntityBounds(root);
         let minX = Infinity;
         let minY = Infinity;
         let maxX = -Infinity;
         let maxY = -Infinity;
         let count = 0;
-        for (const entity of entities) {
-            // Wires have a StaticMapEntity component as well, but the export
-            // deliberately mirrors the ordinary factory camera layer.
-            if (entity && entity.layer && entity.layer !== "regular") continue;
-            const staticMapEntity = entity && entity.components && entity.components.StaticMapEntity;
-            if (!staticMapEntity || typeof staticMapEntity.getTileSpaceBounds !== "function") continue;
-            let bounds;
-            try { bounds = staticMapEntity.getTileSpaceBounds(); } catch (error) { continue; }
-            if (!bounds) continue;
-            const x = Number(bounds.x);
-            const y = Number(bounds.y);
-            const w = Number(bounds.w);
-            const h = Number(bounds.h);
-            if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0) continue;
-            minX = Math.min(minX, x);
-            minY = Math.min(minY, y);
-            maxX = Math.max(maxX, x + w);
-            maxY = Math.max(maxY, y + h);
+        for (const bounds of entities) {
+            minX = Math.min(minX, bounds.x);
+            minY = Math.min(minY, bounds.y);
+            maxX = Math.max(maxX, bounds.x + bounds.w);
+            maxY = Math.max(maxY, bounds.y + bounds.h);
             count += 1;
         }
         if (!Number.isFinite(minX) || count === 0) return null;
         return { x: minX, y: minY, w: maxX - minX, h: maxY - minY, count };
+    }
+
+    buildActivityMap(root, plan) {
+        if (!root || !plan || !plan.output || !plan.output.captureGrid) return null;
+        const grid = plan.output.captureGrid;
+        const total = grid.columns * grid.rows;
+        const active = new Uint8Array(total);
+        const bounds = plan.bounds;
+        if (!bounds || !bounds.w || !bounds.h) return { active, activeCount: 0, sparseCount: total };
+        for (const entity of this.getPlacedEntityBounds(root)) {
+            const left = entity.x - ACTIVITY_MARGIN_TILES;
+            const top = entity.y - ACTIVITY_MARGIN_TILES;
+            const right = entity.x + entity.w + ACTIVITY_MARGIN_TILES;
+            const bottom = entity.y + entity.h + ACTIVITY_MARGIN_TILES;
+            if (right <= bounds.x || bottom <= bounds.y || left >= bounds.x + bounds.w || top >= bounds.y + bounds.h) continue;
+            const startX = Math.max(0, Math.floor((left - bounds.x) / bounds.w * grid.columns));
+            const startY = Math.max(0, Math.floor((top - bounds.y) / bounds.h * grid.rows));
+            const endX = Math.min(grid.columns - 1, Math.ceil((right - bounds.x) / bounds.w * grid.columns) - 1);
+            const endY = Math.min(grid.rows - 1, Math.ceil((bottom - bounds.y) / bounds.h * grid.rows) - 1);
+            for (let gridY = startY; gridY <= endY; gridY++) {
+                for (let gridX = startX; gridX <= endX; gridX++) active[gridY * grid.columns + gridX] = 1;
+            }
+        }
+        let activeCount = 0;
+        for (const value of active) activeCount += value;
+        return { active, activeCount, sparseCount: total - activeCount };
     }
 
     calculateRenderPlan(machineBounds, options) {
@@ -689,6 +769,7 @@ class Mod extends shapez.Mod {
                 tileCount: tileCountX * tileCountY,
                 sourceScale,
                 captureGrid,
+                activity: null,
                 canStreamPng,
                 maxOutputEdge,
             },
@@ -740,6 +821,43 @@ class Mod extends shapez.Mod {
         return Math.floor(size * index / count);
     }
 
+    getCaptureGridCell(plan, destinationX, destinationY) {
+        const output = plan && plan.output;
+        const grid = output && output.captureGrid;
+        if (!output || !grid || !grid.columns || !grid.rows) return -1;
+        const gridX = Math.max(0, Math.min(grid.columns - 1, Math.floor(destinationX / Math.max(1, output.widthPx) * grid.columns)));
+        const gridY = Math.max(0, Math.min(grid.rows - 1, Math.floor(destinationY / Math.max(1, output.heightPx) * grid.rows)));
+        return gridY * grid.columns + gridX;
+    }
+
+    isSparseCaptureTile(plan, destinationX, destinationY) {
+        if (!this.getSmartSparseRegions() || !this.getCrispSampling()) return false;
+        const activity = plan && plan.output && plan.output.activity;
+        const cell = this.getCaptureGridCell(plan, destinationX, destinationY);
+        return Boolean(activity && activity.active && cell >= 0 && activity.active[cell] === 0);
+    }
+
+    getCaptureTileSourceScale(plan, destinationX, destinationY) {
+        const output = plan.output;
+        const regularScale = output.sourceScale || output.effectiveScale;
+        if (!this.isSparseCaptureTile(plan, destinationX, destinationY)) return regularScale;
+        return Math.min(regularScale, Math.max(MIN_SPARSE_SOURCE_SCALE, regularScale * 0.5));
+    }
+
+    needsScaleCanvas(plan) {
+        const output = plan && plan.output;
+        if (!output) return false;
+        if (output.sourceScale < output.effectiveScale - 0.0001) return true;
+        const activity = output.activity;
+        return Boolean(
+            this.getSmartSparseRegions()
+            && this.getCrispSampling()
+            && activity
+            && activity.sparseCount > 0
+            && Math.min(output.sourceScale || output.effectiveScale, Math.max(MIN_SPARSE_SOURCE_SCALE, (output.sourceScale || output.effectiveScale) * 0.5)) < output.effectiveScale - 0.0001
+        );
+    }
+
     analyzeArea(silent) {
         const root = this.getGameRoot();
         if (!root) {
@@ -762,6 +880,7 @@ class Mod extends shapez.Mod {
             usePadding: !useSelection,
             source: useSelection ? "selection" : "factory",
         });
+        this.lastAnalysis.output.activity = this.buildActivityMap(root, this.lastAnalysis);
         if (!this.lastAnalysis.error) {
             this.statusMessage = useSelection
                 ? this.t("selectionReady", { w: machineBounds.w, h: machineBounds.h })
@@ -1181,7 +1300,7 @@ class Mod extends shapez.Mod {
 
     renderCaptureTile(root, plan, tileCanvas, tileContext, scaleCanvas, scaleContext, destinationX, destinationY, tileWidth, tileHeight) {
         const output = plan.output;
-        const sourceScale = output.sourceScale || output.effectiveScale;
+        const sourceScale = this.getCaptureTileSourceScale(plan, destinationX, destinationY);
         const source = this.renderTileAtScale(
             root,
             plan,
@@ -1374,8 +1493,8 @@ class Mod extends shapez.Mod {
         let tileIndex = 0;
         try {
             // PNG rows must remain top-to-bottom, while each row is composed from
-            // a 25–64-cell aspect-aware capture grid. Every cell follows the same
-            // bounded, GPU-preferred tile pipeline before the final compression pass.
+            // the density-calibrated capture grid. Active and sparse cells use
+            // their respective bounded GPU-preferred source pipeline first.
             for (let gridY = 0; gridY < layout.grid.rows; gridY++) {
                 const gridStartY = this.getGridBoundary(output.heightPx, gridY, layout.grid.rows);
                 const gridEndY = this.getGridBoundary(output.heightPx, gridY + 1, layout.grid.rows);
@@ -1509,7 +1628,7 @@ class Mod extends shapez.Mod {
             });
             if (!tileContext) throw new Error("tile-canvas-context-unavailable");
             let scaleContext = null;
-            if (plan.output.sourceScale < plan.output.effectiveScale - 0.0001) {
+            if (this.needsScaleCanvas(plan)) {
                 scaleCanvas = document.createElement("canvas");
                 scaleContext = scaleCanvas.getContext("2d", {
                     alpha: false,

@@ -3,7 +3,7 @@ const METADATA = {
     website: "https://github.com/ct-yx/shapez-mods",
     author: "ct-yx & Codex",
     name: "Factory Area Snapshot",
-    version: "1.2.0",
+    version: "1.3.0",
     id: "factory-area-snapshot",
     description: "Exports high-resolution tiled PNGs of the factory or a map-overview selection.",
     minimumGameVersion: ">=1.5.0",
@@ -24,11 +24,14 @@ const MIN_PADDING_TILES = 0;
 const MAX_PADDING_TILES = 32;
 const DEFAULT_RENDER_SCALE = 1;
 const MIN_RENDER_SCALE = 0.25;
-const MAX_RENDER_SCALE = 2;
+const MAX_RENDER_SCALE = 4;
 const DEFAULT_MAX_MEGAPIXELS = 64;
 const MIN_MAX_MEGAPIXELS = 16;
-const MAX_MAX_MEGAPIXELS = 256;
+const MAX_MAX_MEGAPIXELS = 1024;
+// A normal browser Canvas is kept below this edge. Larger captures are written
+// as a streamed PNG, so they never need one giant final Canvas.
 const MAX_CANVAS_EDGE = 16384;
+const MAX_STREAMING_IMAGE_EDGE = 65535;
 const TILE_CORE_TARGET_PX = 2048;
 const TILE_BLEED_PX = 48;
 const CAPTURE_YIELD_MS = 0;
@@ -36,6 +39,9 @@ const CAPTURE_YIELD_MS = 0;
 // PNG output is mostly empty/repetitive and therefore compresses very well.
 const STREAMING_PNG_MIN_MEGAPIXELS = 96;
 const STREAMING_STRIPE_HEIGHT_PX = 512;
+// Both the tile row cache and the PNG scanline buffer exist briefly. Bound the
+// row itself so very wide streamed images remain responsive and memory stable.
+const STREAMING_STRIPE_MAX_MEGAPIXELS = 4;
 
 const STRINGS = {
     en: {
@@ -283,8 +289,8 @@ class Mod extends shapez.Mod {
                     type: "number",
                     label: { en: STRINGS.en.settingScale, zh: STRINGS.zh.settingScale },
                     description: {
-                        en: "Pixels per map pixel, from 0.25x to 2x. The image budget can lower this automatically.",
-                        zh: "每个地图像素的输出倍率，范围 0.25x–2x；若超过图片预算会自动降低。",
+                        en: "Pixels per map pixel, from 0.25x to 4x. The image budget can lower this automatically.",
+                        zh: "每个地图像素的输出倍率，范围 0.25x–4x；若超过图片预算会自动降低。",
                     },
                     min: MIN_RENDER_SCALE,
                     max: MAX_RENDER_SCALE,
@@ -298,8 +304,8 @@ class Mod extends shapez.Mod {
                     type: "number",
                     label: { en: STRINGS.en.settingBudget, zh: STRINGS.zh.settingBudget },
                     description: {
-                        en: "Hard PNG canvas budget, 16–256 MP. Larger images need considerably more browser memory.",
-                        zh: "PNG 画布硬预算，范围 16–256 MP。数值越大，浏览器内存占用也会明显增加。",
+                        en: "PNG budget, 16–1024 MP. At 96 MP and above, compatible browsers stream the PNG in strips instead of holding the final image canvas in memory.",
+                        zh: "PNG 图片预算，范围 16–1024 MP。达到 96 MP 后，支持的浏览器会以条带流式编码，不常驻整张最终画布。",
                     },
                     min: MIN_MAX_MEGAPIXELS,
                     max: MAX_MAX_MEGAPIXELS,
@@ -407,8 +413,8 @@ class Mod extends shapez.Mod {
                 <div class="fas-note"></div>
                 <div class="fas-controls">
                     <label class="fas-control"><span class="fas-label padding-label"></span><input class="fas-padding" type="range" min="0" max="32" step="1"><output class="fas-padding-value"></output><small class="fas-padding-hint"></small></label>
-                    <label class="fas-control"><span class="fas-label scale-label"></span><select class="fas-scale"><option value="0.25">0.25x</option><option value="0.5">0.5x</option><option value="0.75">0.75x</option><option value="1">1x</option><option value="1.5">1.5x</option><option value="2">2x</option></select></label>
-                    <label class="fas-control"><span class="fas-label budget-label"></span><select class="fas-budget"><option value="16">16 MP</option><option value="32">32 MP</option><option value="48">48 MP</option><option value="64">64 MP</option><option value="96">96 MP</option><option value="128">128 MP</option><option value="192">192 MP</option><option value="256">256 MP</option></select></label>
+                    <label class="fas-control"><span class="fas-label scale-label"></span><select class="fas-scale"><option value="0.25">0.25x</option><option value="0.5">0.5x</option><option value="0.75">0.75x</option><option value="1">1x</option><option value="1.5">1.5x</option><option value="2">2x</option><option value="3">3x</option><option value="4">4x</option></select></label>
+                    <label class="fas-control"><span class="fas-label budget-label"></span><select class="fas-budget"><option value="16">16 MP</option><option value="32">32 MP</option><option value="48">48 MP</option><option value="64">64 MP</option><option value="96">96 MP</option><option value="128">128 MP</option><option value="192">192 MP</option><option value="256">256 MP</option><option value="384">384 MP</option><option value="512">512 MP</option><option value="768">768 MP</option><option value="1024">1024 MP</option></select></label>
                     <label class="fas-check"><input class="fas-items" type="checkbox"><span class="fas-items-text"></span></label>
                     <label class="fas-check"><input class="fas-pause" type="checkbox"><span class="fas-pause-text"></span></label>
                 </div>
@@ -621,10 +627,15 @@ class Mod extends shapez.Mod {
         const requestedWidth = Math.ceil(bounds.w * TILE_SIZE * requestedScale);
         const requestedHeight = Math.ceil(bounds.h * TILE_SIZE * requestedScale);
         const maxPixels = maxMegapixels * 1000000;
+        // Streamed encoding renders into small tiles and writes PNG rows directly,
+        // so its final image is not constrained by a browser Canvas edge. Keep the
+        // legacy edge for the direct Canvas fallback only.
+        const canStreamPng = typeof CompressionStream === "function";
+        const maxOutputEdge = canStreamPng ? MAX_STREAMING_IMAGE_EDGE : MAX_CANVAS_EDGE;
         const reduction = Math.min(
             1,
-            MAX_CANVAS_EDGE / Math.max(1, requestedWidth),
-            MAX_CANVAS_EDGE / Math.max(1, requestedHeight),
+            maxOutputEdge / Math.max(1, requestedWidth),
+            maxOutputEdge / Math.max(1, requestedHeight),
             Math.sqrt(maxPixels / Math.max(1, requestedWidth * requestedHeight))
         );
         const effectiveScale = requestedScale * reduction;
@@ -662,6 +673,8 @@ class Mod extends shapez.Mod {
                 tileCountX,
                 tileCountY,
                 tileCount: tileCountX * tileCountY,
+                canStreamPng,
+                maxOutputEdge,
             },
         };
     }
@@ -1043,14 +1056,20 @@ class Mod extends shapez.Mod {
     shouldUseStreamingPng(plan) {
         return Boolean(
             plan && plan.output
-            && plan.output.megapixels >= STREAMING_PNG_MIN_MEGAPIXELS
-            && typeof CompressionStream === "function"
+            && plan.output.canStreamPng
+            && (
+                plan.output.megapixels >= STREAMING_PNG_MIN_MEGAPIXELS
+                || plan.output.widthPx > MAX_CANVAS_EDGE
+                || plan.output.heightPx > MAX_CANVAS_EDGE
+            )
         );
     }
 
     getStreamingLayout(plan) {
         const output = plan.output;
-        const stripeHeight = Math.min(STREAMING_STRIPE_HEIGHT_PX, output.heightPx);
+        const stripePixelLimit = STREAMING_STRIPE_MAX_MEGAPIXELS * 1000000;
+        const memoryBoundStripeHeight = Math.max(1, Math.floor(stripePixelLimit / Math.max(1, output.widthPx)));
+        const stripeHeight = Math.min(STREAMING_STRIPE_HEIGHT_PX, memoryBoundStripeHeight, output.heightPx);
         const columns = Math.ceil(output.widthPx / output.coreWidthPx);
         const rows = Math.ceil(output.heightPx / stripeHeight);
         return {

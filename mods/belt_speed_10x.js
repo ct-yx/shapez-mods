@@ -13,7 +13,7 @@ const METADATA = {
     settings: {
         enabled: true,
         multiplier: 10,
-        staticBeltAnimationsAtHighMultiplier: true,
+        staticBeltAnimationSpeedThreshold: 15,
         tunnelRangeMultiplierTier1: 1,
         tunnelRangeMultiplierTier2: 1,
         tunnelRangeMultiplierTier3: 1,
@@ -25,6 +25,9 @@ const DEFAULT_ENABLED = true;
 const DEFAULT_MULTIPLIER = 10;
 const MIN_MULTIPLIER = 1;
 const MAX_MULTIPLIER = 50;
+const DEFAULT_STATIC_BELT_ANIMATION_SPEED_THRESHOLD = 15;
+const MIN_STATIC_BELT_ANIMATION_SPEED_THRESHOLD = 0;
+const MAX_STATIC_BELT_ANIMATION_SPEED_THRESHOLD = 1000;
 const DEFAULT_TUNNEL_RANGE_MULTIPLIER = 1;
 const MIN_TUNNEL_RANGE_MULTIPLIER = 1;
 const MAX_TUNNEL_RANGE_MULTIPLIER = 10;
@@ -34,8 +37,9 @@ class Mod extends shapez.Mod {
     init() {
         this.settings.enabled = this.settings.enabled !== false;
         this.settings.multiplier = this.normalizeMultiplier(this.settings.multiplier);
-        this.settings.staticBeltAnimationsAtHighMultiplier =
-            this.settings.staticBeltAnimationsAtHighMultiplier !== false;
+        this.settings.staticBeltAnimationSpeedThreshold = this.normalizeStaticBeltAnimationSpeedThreshold(
+            this.settings.staticBeltAnimationSpeedThreshold
+        );
         this.settings.tunnelRangeMultiplierTier1 = this.normalizeTunnelRangeMultiplier(
             this.settings.tunnelRangeMultiplierTier1
         );
@@ -65,6 +69,15 @@ class Mod extends shapez.Mod {
         const number = Number(value);
         if (!Number.isFinite(number)) return DEFAULT_MULTIPLIER;
         return Math.max(MIN_MULTIPLIER, Math.min(MAX_MULTIPLIER, Math.round(number)));
+    }
+
+    normalizeStaticBeltAnimationSpeedThreshold(value) {
+        const number = Number(value);
+        if (!Number.isFinite(number)) return DEFAULT_STATIC_BELT_ANIMATION_SPEED_THRESHOLD;
+        return Math.max(
+            MIN_STATIC_BELT_ANIMATION_SPEED_THRESHOLD,
+            Math.min(MAX_STATIC_BELT_ANIMATION_SPEED_THRESHOLD, Math.round(number))
+        );
     }
 
     normalizeTunnelRangeMultiplier(value) {
@@ -141,19 +154,24 @@ class Mod extends shapez.Mod {
                     },
                 },
                 {
-                    id: "staticBeltAnimationsAtHighMultiplier",
-                    type: "boolean",
+                    id: "staticBeltAnimationSpeedThreshold",
+                    type: "number",
                     label: {
-                        en: "Freeze belt animation above 4x",
-                        zh: "倍率超过 4x 时静止传送带动画",
+                        en: "Freeze belt animation above throughput",
+                        zh: "传送带吞吐超过阈值时静止动画",
                     },
                     description: {
-                        en: "Keeps belt and belt-underlay textures on a static frame when the selected belt multiplier is above 4x. Does not change simulation speed or item flow.",
-                        zh: "当传送带倍率高于 4x 时，将传送带及其底层贴图固定在静态帧；不影响模拟速度或物品流动。",
+                        en: "Freeze belt and underlay animation only when the actual belt speed exceeds this value. Set to 0 items/s to disable. Does not change simulation speed or item flow.",
+                        zh: "仅当传送带实际速度超过此值时，将传送带及其底层贴图固定在静态帧。设为 0 items/s 可关闭；不影响模拟速度或物品流动。",
                     },
-                    default: true,
+                    min: MIN_STATIC_BELT_ANIMATION_SPEED_THRESHOLD,
+                    max: MAX_STATIC_BELT_ANIMATION_SPEED_THRESHOLD,
+                    step: 1,
+                    suffix: "items/s",
+                    default: DEFAULT_STATIC_BELT_ANIMATION_SPEED_THRESHOLD,
                     onChange: value => {
-                        this.settings.staticBeltAnimationsAtHighMultiplier = Boolean(value);
+                        this.settings.staticBeltAnimationSpeedThreshold =
+                            this.normalizeStaticBeltAnimationSpeedThreshold(value);
                         this.saveSettings();
                     },
                 },
@@ -236,8 +254,9 @@ class Mod extends shapez.Mod {
         this.settings.multiplier = this.normalizeMultiplier(
             this.settingsPanel.get("multiplier")
         );
-        this.settings.staticBeltAnimationsAtHighMultiplier =
-            this.settingsPanel.get("staticBeltAnimationsAtHighMultiplier") !== false;
+        this.settings.staticBeltAnimationSpeedThreshold = this.normalizeStaticBeltAnimationSpeedThreshold(
+            this.settingsPanel.get("staticBeltAnimationSpeedThreshold")
+        );
         this.settings.tunnelRangeMultiplierTier1 = this.normalizeTunnelRangeMultiplier(
             this.settingsPanel.get("tunnelRangeMultiplierTier1")
         );
@@ -267,15 +286,26 @@ class Mod extends shapez.Mod {
         return multiplier <= 1 ? 1 : multiplier;
     }
 
-    getStaticBeltAnimationsAtHighMultiplier() {
-        if (this.settingsPanel) {
-            return this.settingsPanel.get("staticBeltAnimationsAtHighMultiplier") !== false;
-        }
-        return this.settings.staticBeltAnimationsAtHighMultiplier !== false;
+    getStaticBeltAnimationSpeedThreshold() {
+        const value = this.settingsPanel
+            ? this.settingsPanel.get("staticBeltAnimationSpeedThreshold")
+            : this.settings.staticBeltAnimationSpeedThreshold;
+        return this.normalizeStaticBeltAnimationSpeedThreshold(value);
     }
 
-    shouldFreezeBeltAnimations() {
-        return this.getStaticBeltAnimationsAtHighMultiplier() && this.getMultiplier() > 4;
+    shouldFreezeBeltAnimations(root) {
+        const threshold = this.getStaticBeltAnimationSpeedThreshold();
+        const hubGoals = root && root.hubGoals;
+        if (threshold <= 0 || !hubGoals || typeof hubGoals.getBeltBaseSpeed !== "function") {
+            return false;
+        }
+
+        // getBeltBaseSpeed is the same items/s value shown by the belt's
+        // placement statistics and includes this Mod's active multiplier.
+        // It reflects real simulation throughput capacity rather than merely
+        // the configured multiplier, so belt animations stay live at 5x when
+        // a low vanilla belt tier is still below the selected threshold.
+        return Number(hubGoals.getBeltBaseSpeed()) > threshold;
     }
 
     getTunnelRangeMultipliers() {
@@ -572,7 +602,7 @@ class Mod extends shapez.Mod {
         }
 
         this.modInterface.replaceMethod(systemClass, "drawChunk", function (oldDrawChunk, args) {
-            if (!mod.shouldFreezeBeltAnimations()) {
+            if (!mod.shouldFreezeBeltAnimations(this.root)) {
                 return oldDrawChunk(args && args[0], args && args[1]);
             }
 

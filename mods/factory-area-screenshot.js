@@ -472,27 +472,31 @@ class Mod extends shapez.Mod {
         const container = document.createElement("div");
         container.id = "factory-area-snapshot-root";
         container.innerHTML = `
-            <button type="button" class="fas-launcher styledButton" aria-expanded="false"></button>
+            <button type="button" class="fas-launcher styledButton" aria-expanded="false"><span class="fas-launcher-icon" aria-hidden="true">▣</span><span class="fas-launcher-label"></span><span class="fas-launcher-spark" aria-hidden="true"></span></button>
             <section class="fas-panel" hidden>
                 <header class="fas-header">
-                    <span class="fas-mark" aria-hidden="true">▣</span>
-                    <div class="fas-heading">
-                        <strong class="fas-title"></strong>
-                        <span class="fas-subtitle"></span>
+                    <div class="fas-brand">
+                        <span class="fas-mark" aria-hidden="true">▣</span>
+                        <div class="fas-heading">
+                            <strong class="fas-title"></strong>
+                            <span class="fas-subtitle"></span>
+                        </div>
                     </div>
                     <button type="button" class="fas-close styledButton" aria-label="close">×</button>
                 </header>
-                <div class="fas-quick-controls">
-                    <label class="fas-quick-field"><span class="fas-label quality-label"></span><select class="fas-quality"><option value="low"></option><option value="medium"></option><option value="high"></option></select></label>
-                    <div class="fas-selection-readout"><span class="fas-label selection-label"></span><strong class="fas-selection-value"></strong></div>
+                <div class="fas-content">
+                    <div class="fas-quick-controls">
+                        <label class="fas-quick-field"><span class="fas-label quality-label"></span><select class="fas-quality"><option value="low"></option><option value="medium"></option><option value="high"></option></select></label>
+                        <div class="fas-selection-readout"><span class="fas-label selection-label"></span><strong class="fas-selection-value"></strong></div>
+                    </div>
+                    <div class="fas-warning" hidden></div>
+                    <div class="fas-status" hidden aria-live="polite"></div>
+                    <footer class="fas-actions">
+                        <button type="button" class="fas-select styledButton"></button>
+                        <button type="button" class="fas-capture styledButton"></button>
+                        <button type="button" class="fas-cancel styledButton" hidden></button>
+                    </footer>
                 </div>
-                <div class="fas-warning" hidden></div>
-                <div class="fas-status" hidden aria-live="polite"></div>
-                <footer class="fas-actions">
-                    <button type="button" class="fas-select styledButton"></button>
-                    <button type="button" class="fas-capture styledButton"></button>
-                    <button type="button" class="fas-cancel styledButton" hidden></button>
-                </footer>
             </section>`;
         document.body.appendChild(container);
 
@@ -593,7 +597,7 @@ class Mod extends shapez.Mod {
         const selecting = Boolean(this.selection && this.selection.armed);
         const size = this.getSelectionTileSize();
         const effectiveQuality = this.enforceRegionQuality(false);
-        e.launcher.textContent = this.t("launcher");
+        e.launcher.querySelector(".fas-launcher-label").textContent = this.t("launcher");
         e.launcher.title = this.t("open");
         e.launcher.setAttribute("aria-expanded", String(this.panelOpen));
         e.panel.hidden = !this.panelOpen;
@@ -1718,10 +1722,20 @@ class Mod extends shapez.Mod {
     }
 
     registerCss() {
-        // The quick panel deliberately uses the same compact card/button language
-        // as the structured settings screen instead of a telemetry dashboard.
+        // Match Stress Lab's compact glass-panel visual language, while leaving
+        // the factory visible through every structural layer of this overlay.
         this.modInterface.registerCss(`
             #factory-area-snapshot-root {
+                --fas-cyan: #66e3ff;
+                --fas-blue: #3b9cff;
+                --fas-purple: #9b5cff;
+                --fas-hot: #ff657b;
+                --fas-warm: #ffd166;
+                --fas-text: #f2f7ff;
+                --fas-muted: #a9c0df;
+                --fas-border: rgba(137, 205, 255, .30);
+                --fas-surface: rgba(10, 22, 50, .52);
+                --fas-card: rgba(99, 145, 213, .14);
                 position: fixed;
                 top: 12px;
                 left: 12px;
@@ -1729,10 +1743,11 @@ class Mod extends shapez.Mod {
                 display: flex;
                 flex-direction: column;
                 align-items: flex-start;
-                gap: 7px;
-                color: #f4f4f4;
-                font-family: Roboto, Arial, sans-serif;
+                gap: 8px;
+                color: var(--fas-text);
+                font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Roboto, Arial, sans-serif;
                 font-variant-numeric: tabular-nums;
+                -webkit-font-smoothing: antialiased;
                 pointer-events: none;
             }
             #factory-area-snapshot-root button,
@@ -1741,121 +1756,149 @@ class Mod extends shapez.Mod {
                 position: fixed;
                 z-index: 10019;
                 box-sizing: border-box;
-                border: 2px solid #f8b63d;
-                outline: 2px solid rgba(20, 25, 31, .75);
-                background: repeating-linear-gradient(-45deg, rgba(248, 182, 61, .23) 0 10px, rgba(72, 160, 225, .15) 10px 20px);
-                box-shadow: inset 0 0 0 1px rgba(255, 245, 193, .45);
+                border: 2px solid #66e3ff;
+                outline: 2px solid rgba(19, 10, 55, .44);
+                background: repeating-linear-gradient(-45deg, rgba(102, 227, 255, .18) 0 10px, rgba(155, 92, 255, .14) 10px 20px);
+                box-shadow: inset 0 0 0 1px rgba(233, 251, 255, .43), 0 0 18px rgba(102, 227, 255, .35);
                 pointer-events: none;
             }
             #factory-area-snapshot-root .fas-launcher {
-                min-width: 116px;
-                min-height: 34px;
-                padding: 0 13px;
-                border: 0;
-                border-left: 5px solid #f8b63d;
-                border-radius: 2px;
-                background: #48545c;
-                box-shadow: 0 2px 0 rgba(0, 0, 0, .48), inset 0 1px rgba(255, 255, 255, .16);
-                color: #fff;
+                position: relative;
+                display: inline-flex;
+                min-width: 142px;
+                min-height: 38px;
+                align-items: center;
+                justify-content: center;
+                gap: 7px;
+                overflow: hidden;
+                padding: 0 15px;
+                border: 1px solid var(--fas-border);
+                border-radius: 999px;
+                background: rgba(9, 20, 46, .44);
+                box-shadow: 0 8px 24px rgba(0, 0, 0, .30), 0 0 18px rgba(59, 156, 255, .08), inset 0 1px rgba(255, 255, 255, .08);
+                color: var(--fas-text);
                 cursor: pointer;
-                font-size: 11px;
-                font-weight: 700;
+                font-size: 10px;
+                font-weight: 800;
                 letter-spacing: .06em;
+                isolation: isolate;
+                transition: border-color .16s ease, background .16s ease, box-shadow .16s ease, transform .16s ease;
             }
+            #factory-area-snapshot-root .fas-launcher > :not(.fas-launcher-spark) { position: relative; z-index: 1; }
+            #factory-area-snapshot-root .fas-launcher-icon { color: var(--fas-cyan); font-size: 15px; line-height: 1; text-shadow: 0 0 10px rgba(102, 227, 255, .68); }
+            #factory-area-snapshot-root .fas-launcher-spark { position: absolute; z-index: 0; top: -35px; right: -16px; width: 88px; height: 88px; border-radius: 50%; background: radial-gradient(circle, rgba(155, 92, 255, .30), rgba(59, 156, 255, 0) 68%); pointer-events: none; }
             #factory-area-snapshot-root .fas-launcher:hover,
-            #factory-area-snapshot-root .fas-launcher[aria-expanded="true"] { background: #5a6a74; }
+            #factory-area-snapshot-root .fas-launcher[aria-expanded="true"] { border-color: rgba(102, 227, 255, .58); background: rgba(23, 51, 94, .53); box-shadow: 0 9px 26px rgba(0, 0, 0, .34), 0 0 22px rgba(59, 156, 255, .16); }
+            #factory-area-snapshot-root .fas-launcher:active { transform: translateY(1px) scale(.985); }
             #factory-area-snapshot-root .fas-panel {
-                width: min(324px, calc(100vw - 24px));
+                width: min(348px, calc(100vw - 24px));
                 box-sizing: border-box;
-                border: 2px solid #252d33;
-                border-radius: 3px;
-                background: #354149;
-                box-shadow: 0 4px 0 rgba(0, 0, 0, .46), inset 0 1px rgba(255, 255, 255, .12);
+                overflow: hidden;
+                border: 1px solid var(--fas-border);
+                border-radius: 19px;
+                background: linear-gradient(145deg, rgba(9, 25, 56, .60), rgba(35, 18, 70, .47));
+                box-shadow: 0 18px 52px rgba(0, 0, 0, .40), 0 0 32px rgba(59, 156, 255, .09), inset 0 1px rgba(255, 255, 255, .09);
+                backdrop-filter: blur(7px) saturate(1.08);
+                -webkit-backdrop-filter: blur(7px) saturate(1.08);
                 pointer-events: auto;
             }
             #factory-area-snapshot-root .fas-panel[hidden] { display: none; }
             #factory-area-snapshot-root .fas-header {
                 display: flex;
                 align-items: center;
-                gap: 8px;
-                min-height: 42px;
-                padding: 0 8px;
-                border-bottom: 2px solid rgba(24, 30, 35, .68);
-                background: #47575f;
+                justify-content: space-between;
+                gap: 10px;
+                min-height: 52px;
+                padding: 0 13px;
+                border-bottom: 1px solid rgba(146, 210, 255, .15);
+                background: linear-gradient(90deg, rgba(91, 164, 255, .13), rgba(155, 92, 255, .09));
+            }
+            #factory-area-snapshot-root .fas-brand {
+                display: flex;
+                min-width: 0;
+                align-items: center;
+                gap: 9px;
             }
             #factory-area-snapshot-root .fas-mark {
                 display: grid;
-                width: 24px;
-                height: 24px;
+                width: 29px;
+                height: 29px;
                 place-items: center;
-                border-radius: 2px;
-                background: #60a9d6;
+                flex: 0 0 auto;
+                border: 1px solid rgba(208, 246, 255, .38);
+                border-radius: 10px;
+                background: linear-gradient(135deg, rgba(59, 156, 255, .86), rgba(155, 92, 255, .78));
+                box-shadow: 0 4px 12px rgba(59, 156, 255, .27), inset 0 1px rgba(255, 255, 255, .32);
                 color: #fff;
-                font-size: 15px;
-                box-shadow: inset 0 1px rgba(255, 255, 255, .34);
+                font-size: 16px;
             }
             #factory-area-snapshot-root .fas-heading { min-width: 0; flex: 1; }
-            #factory-area-snapshot-root .fas-title { display: block; color: #fff; font-size: 12px; font-weight: 800; letter-spacing: .045em; }
-            #factory-area-snapshot-root .fas-subtitle { display: block; margin-top: 1px; color: #d6e0e5; font-size: 8px; font-weight: 700; letter-spacing: .08em; }
+            #factory-area-snapshot-root .fas-title { display: block; overflow: hidden; color: var(--fas-text); font-size: 11px; font-weight: 800; letter-spacing: .09em; text-overflow: ellipsis; white-space: nowrap; }
+            #factory-area-snapshot-root .fas-subtitle { display: block; margin-top: 2px; overflow: hidden; color: var(--fas-muted); font-size: 8px; font-weight: 700; letter-spacing: .06em; text-overflow: ellipsis; white-space: nowrap; }
             #factory-area-snapshot-root .fas-close {
-                width: 25px;
-                height: 25px;
+                width: 27px;
+                height: 27px;
                 padding: 0 0 2px;
-                border: 0;
-                border-radius: 2px;
-                background: #687880;
-                color: #fff;
+                border: 1px solid rgba(255, 255, 255, .13);
+                border-radius: 50%;
+                background: rgba(255, 255, 255, .07);
+                color: var(--fas-muted);
                 cursor: pointer;
                 font-size: 18px;
                 line-height: 1;
+                transition: background .16s ease, color .16s ease, transform .16s ease;
             }
-            #factory-area-snapshot-root .fas-close:hover { background: #c86659; }
+            #factory-area-snapshot-root .fas-close:hover { background: rgba(255, 101, 123, .24); color: #fff; transform: rotate(90deg); }
+            #factory-area-snapshot-root .fas-content { padding: 11px 12px 12px; }
             #factory-area-snapshot-root .fas-quick-controls {
                 display: grid;
                 grid-template-columns: 1fr 1fr;
-                gap: 8px;
-                padding: 10px;
+                gap: 9px;
             }
             #factory-area-snapshot-root .fas-quick-field,
             #factory-area-snapshot-root .fas-selection-readout {
                 display: flex;
                 min-width: 0;
                 flex-direction: column;
-                gap: 5px;
-                padding: 8px;
-                border-radius: 2px;
-                background: #28333a;
-                box-shadow: inset 0 1px rgba(255, 255, 255, .06);
+                gap: 6px;
+                padding: 9px;
+                border: 1px solid rgba(155, 211, 255, .16);
+                border-radius: 12px;
+                background: var(--fas-card);
+                box-shadow: inset 0 1px rgba(255, 255, 255, .07);
             }
-            #factory-area-snapshot-root .fas-label { color: #b9c6cb; font-size: 8px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+            #factory-area-snapshot-root .fas-label { color: var(--fas-muted); font-size: 8px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
             #factory-area-snapshot-root .fas-quality {
                 width: 100%;
                 min-width: 0;
-                height: 30px;
-                padding: 0 5px;
-                border: 1px solid #70818a;
-                border-radius: 2px;
+                height: 31px;
+                padding: 0 7px;
+                border: 1px solid rgba(151, 213, 255, .22);
+                border-radius: 8px;
                 outline: none;
-                background: #1f292f;
-                color: #fff;
+                background: rgba(0, 0, 0, .25);
+                color: var(--fas-text);
                 cursor: pointer;
                 font-size: 10px;
                 font-weight: 700;
             }
-            #factory-area-snapshot-root .fas-quality:focus { border-color: #77c7ef; box-shadow: 0 0 0 2px rgba(119, 199, 239, .22); }
-            #factory-area-snapshot-root .fas-selection-value { min-height: 30px; overflow: hidden; color: #fff; font: 800 13px "Roboto Mono", monospace; line-height: 30px; text-overflow: ellipsis; white-space: nowrap; }
+            #factory-area-snapshot-root .fas-quality:focus { border-color: var(--fas-cyan); box-shadow: 0 0 0 2px rgba(102, 227, 255, .16); }
+            #factory-area-snapshot-root .fas-quality option { background: #111f43; color: var(--fas-text); }
+            #factory-area-snapshot-root .fas-selection-value { min-height: 31px; overflow: hidden; color: var(--fas-text); font: 800 13px ui-monospace, SFMono-Regular, Menlo, monospace; line-height: 31px; text-overflow: ellipsis; white-space: nowrap; }
             #factory-area-snapshot-root .fas-warning,
-            #factory-area-snapshot-root .fas-status { margin: 0 10px 9px; padding: 7px 8px; border-radius: 2px; font-size: 9px; font-weight: 650; line-height: 1.35; }
-            #factory-area-snapshot-root .fas-warning { border-left: 4px solid #f8b63d; background: #5a4828; color: #fff1c7; }
-            #factory-area-snapshot-root .fas-status { border-left: 4px solid #67b8e2; background: #263a46; color: #d8effb; }
-            #factory-area-snapshot-root .fas-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin: 0 10px 10px; }
-            #factory-area-snapshot-root .fas-actions button { min-height: 34px; border: 0; border-radius: 2px; color: #fff; cursor: pointer; font-size: 10px; font-weight: 800; letter-spacing: .035em; }
+            #factory-area-snapshot-root .fas-status { margin-top: 9px; padding: 8px 9px; border: 1px solid rgba(155, 211, 255, .16); border-radius: 10px; font-size: 9px; font-weight: 650; line-height: 1.4; }
+            #factory-area-snapshot-root .fas-warning { border-color: rgba(255, 209, 102, .36); background: rgba(128, 87, 17, .30); color: #ffebae; }
+            #factory-area-snapshot-root .fas-status { border-color: rgba(102, 227, 255, .25); background: rgba(34, 105, 158, .24); color: #d8f6ff; }
+            #factory-area-snapshot-root .fas-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 11px; }
+            #factory-area-snapshot-root .fas-actions button { min-height: 37px; border: 1px solid rgba(220, 247, 255, .16); border-radius: 10px; color: var(--fas-text); cursor: pointer; font-size: 10px; font-weight: 800; letter-spacing: .04em; transition: filter .16s ease, transform .16s ease, border-color .16s ease; }
             #factory-area-snapshot-root .fas-actions button:disabled { cursor: default; opacity: .45; }
-            #factory-area-snapshot-root .fas-select { background: #7e5d2b; box-shadow: inset 0 1px rgba(255, 255, 255, .16), 0 2px rgba(53, 37, 14, .7); }
-            #factory-area-snapshot-root .fas-capture { background: #3c86b1; box-shadow: inset 0 1px rgba(255, 255, 255, .18), 0 2px rgba(19, 55, 77, .72); }
-            #factory-area-snapshot-root .fas-actions button:hover:not(:disabled) { filter: brightness(1.12); }
-            #factory-area-snapshot-root .fas-actions button:active:not(:disabled) { transform: translateY(1px); box-shadow: none; }
-            #factory-area-snapshot-root .fas-cancel { grid-column: 1 / -1; background: #a95049; }
+            #factory-area-snapshot-root .fas-select { background: linear-gradient(110deg, rgba(211, 142, 39, .86), rgba(173, 88, 50, .82)); box-shadow: 0 5px 13px rgba(161, 98, 28, .18), inset 0 1px rgba(255, 255, 255, .18); }
+            #factory-area-snapshot-root .fas-capture { background: linear-gradient(110deg, rgba(32, 112, 220, .88), rgba(125, 78, 226, .85)); box-shadow: 0 5px 14px rgba(59, 156, 255, .21), inset 0 1px rgba(255, 255, 255, .18); }
+            #factory-area-snapshot-root .fas-actions button:hover:not(:disabled) { border-color: rgba(214, 245, 255, .38); filter: brightness(1.16); }
+            #factory-area-snapshot-root .fas-actions button:active:not(:disabled) { transform: translateY(1px) scale(.985); }
+            #factory-area-snapshot-root .fas-cancel { grid-column: 1 / -1; background: linear-gradient(110deg, rgba(204, 60, 101, .84), rgba(242, 103, 78, .82)); }
+            #factory-area-snapshot-root button:focus-visible,
+            #factory-area-snapshot-root select:focus-visible { outline: 2px solid rgba(102, 227, 255, .82); outline-offset: 2px; }
             @media (max-width: 360px) {
                 #factory-area-snapshot-root .fas-panel { width: calc(100vw - 24px); }
             }

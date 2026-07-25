@@ -3,9 +3,9 @@ const METADATA = {
     website: "https://github.com/ct-yx/shapez-mods",
     author: "ct-yx & Codex",
     name: "Factory Area Snapshot",
-    version: "1.5.0",
+    version: "1.6.0",
     id: "factory-area-snapshot",
-    description: "Exports high-resolution tiled PNGs of the factory or a map-overview selection.",
+    description: "Exports high-resolution factory PNGs through aspect-aware GPU-preferred capture partitions.",
     minimumGameVersion: ">=1.5.0",
     doesNotAffectSavegame: true,
     settings: {
@@ -38,6 +38,11 @@ const STREAMING_STRIPE_HEIGHT_PX = 512;
 // Both the tile row cache and the PNG scanline buffer exist briefly. Bound the
 // row itself so very wide streamed images remain responsive and memory stable.
 const STREAMING_STRIPE_MAX_MEGAPIXELS = 4;
+const MIN_CAPTURE_GRID_CELLS = 25;
+const MAX_CAPTURE_GRID_CELLS = 64;
+// Above this zoom, shapez uses the same sprite-atlas tier and only filters it.
+// Render a crisp native source, then let the GPU scale it during final composition.
+const MAX_SHARP_SOURCE_SCALE = 1;
 
 const STRINGS = {
     en: {
@@ -63,10 +68,11 @@ const STRINGS = {
         selectedArea: "Map selection",
         exportArea: "Export area",
         output: "Output",
-        scaleResult: "Auto render scale",
-        chunks: "Tiles",
+        scaleResult: "Output render scale",
+        sourceScale: "Crisp source / output",
+        chunks: "Capture partitions",
         waiting: "Analyze the placed factory area before exporting.",
-        ready: "Ready. Rendering is split into tiles to keep the UI responsive.",
+        ready: "Ready. Rendering uses 25–64 aspect-aware capture partitions.",
         selectionArmed: "Map selection is armed. Zoom into Map Overview, then left-drag a rectangle.",
         selectionRequiresMap: "Zoom out until Map Overview is active, then left-drag a rectangle.",
         selectionReady: "Selected map area: {w} × {h} tiles. It will export exactly as selected, without outer padding.",
@@ -82,7 +88,7 @@ const STRINGS = {
         unavailable: "Enter a running game to use the snapshot tool.",
         layerNote: "The PNG always uses the regular factory render; Map Overview is only used to choose an area.",
         settingsTitle: "Factory Area Snapshot",
-        settingsDescription: "Exports the bounds of placed machines with a configurable safety margin. The export uses regular-camera rendering in tiles.",
+        settingsDescription: "Exports the bounds of placed machines with a configurable safety margin. High resolutions use aspect-aware capture partitions and a GPU-preferred canvas pipeline.",
         settingPadding: "Outer padding",
         settingResolution: "Target output resolution",
         settingCrispSampling: "Crisp pixel sampling",
@@ -112,10 +118,11 @@ const STRINGS = {
         selectedArea: "地图选区",
         exportArea: "截图范围",
         output: "输出尺寸",
-        scaleResult: "自动计算倍率",
-        chunks: "分块数量",
+        scaleResult: "最终渲染倍率",
+        sourceScale: "清晰源 / 最终倍率",
+        chunks: "分区捕获",
         waiting: "先分析已放置机器的范围，再导出截图。",
-        ready: "已就绪。截图会分块渲染与拼接，避免长时间卡住界面。",
+        ready: "已就绪。截图将按长宽比分为 25–64 个分区进行渲染与拼接。",
         selectionArmed: "选区已准备：缩小进入地图总览后，用左键拖拽一个矩形范围。",
         selectionRequiresMap: "请先缩小进入地图总览，再用左键拖拽选择区域。",
         selectionReady: "已选中地图区域：{w} × {h} 格。将严格按拖拽范围导出，不添加外围留白。",
@@ -131,7 +138,7 @@ const STRINGS = {
         unavailable: "进入正在运行的存档后才能使用截图工具。",
         layerNote: "PNG 始终按普通工厂层渲染；地图总览只用于框选截图区域。",
         settingsTitle: "工厂区域截图",
-        settingsDescription: "以已放置机器的边界加上可配置留白导出 PNG；使用普通镜头渲染路径并分块拼接。",
+        settingsDescription: "以已放置机器的边界加上可配置留白导出 PNG；高分辨率使用按长宽比划分的分区和 GPU 偏好的 Canvas 渲染流程。",
         settingPadding: "外围留白",
         settingResolution: "目标输出分辨率",
         settingCrispSampling: "清晰像素采样",
@@ -543,7 +550,8 @@ class Mod extends shapez.Mod {
             <div><span>${this.escapeHtml(this.t("exportArea"))}</span><strong>${area.w} × ${area.h}</strong></div>
             <div><span>${this.escapeHtml(this.t("output"))}</span><strong>${output.widthPx.toLocaleString()} × ${output.heightPx.toLocaleString()}</strong></div>
             <div><span>${this.escapeHtml(this.t("scaleResult"))}</span><strong>${this.formatScale(output.effectiveScale)}x · ${this.formatMegapixels(output.megapixels)} MP</strong></div>
-            <div><span>${this.escapeHtml(this.t("chunks"))}</span><strong>${output.tileCountX} × ${output.tileCountY} = ${output.tileCount}</strong></div>`;
+            <div><span>${this.escapeHtml(this.t("sourceScale"))}</span><strong>${this.formatScale(output.sourceScale)}x → ${this.formatScale(output.effectiveScale)}x</strong></div>
+            <div><span>${this.escapeHtml(this.t("chunks"))}</span><strong>${output.captureGrid.columns} × ${output.captureGrid.rows} = ${output.captureGrid.count}</strong></div>`;
     }
 
     escapeHtml(value) {
@@ -646,6 +654,16 @@ class Mod extends shapez.Mod {
         const coreWorldTiles = coreWidthPx / Math.max(1e-9, TILE_SIZE * effectiveScale);
         const tileCountX = Math.ceil(widthPx / coreWidthPx);
         const tileCountY = Math.ceil(heightPx / coreWidthPx);
+        // A high-res output must not ask shapez to smooth the same atlas pixels
+        // again and again. Draw one native-quality source then use a nearest-
+        // neighbour GPU canvas blit to reach the requested final pixel grid.
+        // Turning crisp sampling off intentionally restores the game's original
+        // direct-at-output-scale path.
+        const sourceScale = this.getCrispSampling()
+            ? Math.min(effectiveScale, MAX_SHARP_SOURCE_SCALE)
+            : effectiveScale;
+        const actualMegapixels = widthPx * heightPx / 1000000;
+        const captureGrid = this.createCaptureGrid(widthPx, heightPx, actualMegapixels);
         return {
             machineBounds,
             bounds,
@@ -656,16 +674,51 @@ class Mod extends shapez.Mod {
                 effectiveScale,
                 widthPx,
                 heightPx,
-                megapixels: widthPx * heightPx / 1000000,
+                megapixels: actualMegapixels,
                 coreWorldTiles,
                 coreWidthPx,
                 tileCountX,
                 tileCountY,
                 tileCount: tileCountX * tileCountY,
+                sourceScale,
+                captureGrid,
                 canStreamPng,
                 maxOutputEdge,
             },
         };
+    }
+
+
+    getCaptureGridRange(megapixels) {
+        // The preferred counts are square numbers for balanced maps. The small
+        // range below each next tier is deliberately available for wide/tall
+        // factories, so a 2:1 map can use e.g. 7 × 4 instead of a misleading
+        // 5 × 5 grid while staying inside the promised 25–64 partitions.
+        if (megapixels >= 768) return { min: 49, max: 64, preferred: 64 };
+        if (megapixels >= 384) return { min: 49, max: 63, preferred: 49 };
+        if (megapixels >= 128) return { min: 36, max: 48, preferred: 36 };
+        return { min: 25, max: 35, preferred: 25 };
+    }
+
+    createCaptureGrid(widthPx, heightPx, megapixels) {
+        const range = this.getCaptureGridRange(megapixels);
+        const aspect = Math.max(0.01, widthPx / Math.max(1, heightPx));
+        let best = null;
+        for (let columns = 1; columns <= MAX_CAPTURE_GRID_CELLS; columns++) {
+            for (let rows = 1; rows <= MAX_CAPTURE_GRID_CELLS; rows++) {
+                const count = columns * rows;
+                if (count < Math.max(MIN_CAPTURE_GRID_CELLS, range.min) || count > Math.min(MAX_CAPTURE_GRID_CELLS, range.max)) continue;
+                const ratioPenalty = Math.abs(Math.log((columns / rows) / aspect));
+                const densityPenalty = Math.abs(count - range.preferred) / range.preferred * 0.35;
+                const score = ratioPenalty + densityPenalty;
+                if (!best || score < best.score) best = { columns, rows, count, score };
+            }
+        }
+        return best || { columns: 5, rows: 5, count: 25, score: 0 };
+    }
+
+    getGridBoundary(size, index, count) {
+        return Math.floor(size * index / count);
     }
 
     analyzeArea(silent) {
@@ -1053,25 +1106,31 @@ class Mod extends shapez.Mod {
         return readbackContext.getImageData(0, 0, tileWidth, tileHeight).data;
     }
 
-    renderTile(root, plan, tileCanvas, tileContext, destinationX, destinationY, tileWidth, tileHeight) {
+    renderTileAtScale(root, plan, tileCanvas, tileContext, destinationX, destinationY, tileWidth, tileHeight, renderScale) {
         const output = plan.output;
-        const zoom = output.effectiveScale;
-        const worldStartX = plan.bounds.x * TILE_SIZE + destinationX / zoom;
-        const worldStartY = plan.bounds.y * TILE_SIZE + destinationY / zoom;
+        const finalScale = output.effectiveScale;
+        const zoom = Math.max(1e-6, renderScale);
+        const worldStartX = plan.bounds.x * TILE_SIZE + destinationX / finalScale;
+        const worldStartY = plan.bounds.y * TILE_SIZE + destinationY / finalScale;
+        const worldWidth = tileWidth / finalScale;
+        const worldHeight = tileHeight / finalScale;
+        const coreWidth = Math.max(1, Math.ceil(worldWidth * zoom));
+        const coreHeight = Math.max(1, Math.ceil(worldHeight * zoom));
         const bleedWorld = TILE_BLEED_PX / zoom;
         const visibleRect = this.createVisibleRect(
             worldStartX - bleedWorld,
             worldStartY - bleedWorld,
-            tileWidth / zoom + bleedWorld * 2,
-            tileHeight / zoom + bleedWorld * 2
+            worldWidth + bleedWorld * 2,
+            worldHeight + bleedWorld * 2
         );
-        const totalWidth = tileWidth + TILE_BLEED_PX * 2;
-        const totalHeight = tileHeight + TILE_BLEED_PX * 2;
+        const totalWidth = coreWidth + TILE_BLEED_PX * 2;
+        const totalHeight = coreHeight + TILE_BLEED_PX * 2;
         if (tileCanvas.width !== totalWidth) tileCanvas.width = totalWidth;
         if (tileCanvas.height !== totalHeight) tileCanvas.height = totalHeight;
         tileContext.setTransform(1, 0, 0, 1, 0, 0);
         tileContext.clearRect(0, 0, totalWidth, totalHeight);
         tileContext.imageSmoothingEnabled = false;
+        if ("webkitImageSmoothingEnabled" in tileContext) tileContext.webkitImageSmoothingEnabled = false;
         tileContext.setTransform(zoom, 0, 0, zoom, TILE_BLEED_PX - worldStartX * zoom, TILE_BLEED_PX - worldStartY * zoom);
         const parameters = this.createDrawParameters(tileContext, visibleRect, zoom, root);
         this.resetRendererDeduplication(root);
@@ -1084,6 +1143,63 @@ class Mod extends shapez.Mod {
             if (hubSystem && typeof hubSystem.draw === "function") hubSystem.draw(parameters);
         });
         tileContext.setTransform(1, 0, 0, 1, 0, 0);
+        return { coreWidth, coreHeight };
+    }
+
+    renderTile(root, plan, tileCanvas, tileContext, destinationX, destinationY, tileWidth, tileHeight) {
+        return this.renderTileAtScale(
+            root,
+            plan,
+            tileCanvas,
+            tileContext,
+            destinationX,
+            destinationY,
+            tileWidth,
+            tileHeight,
+            plan.output.effectiveScale
+        );
+    }
+
+    renderCaptureTile(root, plan, tileCanvas, tileContext, scaleCanvas, scaleContext, destinationX, destinationY, tileWidth, tileHeight) {
+        const output = plan.output;
+        const sourceScale = output.sourceScale || output.effectiveScale;
+        const source = this.renderTileAtScale(
+            root,
+            plan,
+            tileCanvas,
+            tileContext,
+            destinationX,
+            destinationY,
+            tileWidth,
+            tileHeight,
+            sourceScale
+        );
+        if (sourceScale >= output.effectiveScale - 0.0001 || !scaleCanvas || !scaleContext) {
+            return { canvas: tileCanvas, coreWidth: source.coreWidth, coreHeight: source.coreHeight };
+        }
+        const totalWidth = tileWidth + TILE_BLEED_PX * 2;
+        const totalHeight = tileHeight + TILE_BLEED_PX * 2;
+        if (scaleCanvas.width !== totalWidth) scaleCanvas.width = totalWidth;
+        if (scaleCanvas.height !== totalHeight) scaleCanvas.height = totalHeight;
+        scaleContext.setTransform(1, 0, 0, 1, 0, 0);
+        scaleContext.clearRect(0, 0, totalWidth, totalHeight);
+        scaleContext.imageSmoothingEnabled = false;
+        if ("webkitImageSmoothingEnabled" in scaleContext) scaleContext.webkitImageSmoothingEnabled = false;
+        const ratio = output.effectiveScale / sourceScale;
+        // Compose the low-level game draw onto the target tile using a GPU-preferred
+        // Canvas 2D blit. The extra source bleed remains available on both sides.
+        scaleContext.drawImage(
+            tileCanvas,
+            0,
+            0,
+            tileCanvas.width,
+            tileCanvas.height,
+            TILE_BLEED_PX - TILE_BLEED_PX * ratio,
+            TILE_BLEED_PX - TILE_BLEED_PX * ratio,
+            tileCanvas.width * ratio,
+            tileCanvas.height * ratio
+        );
+        return { canvas: scaleCanvas, coreWidth: tileWidth, coreHeight: tileHeight };
     }
 
     async createPngBlob(canvas) {
@@ -1112,17 +1228,49 @@ class Mod extends shapez.Mod {
 
     getStreamingLayout(plan) {
         const output = plan.output;
+        const grid = output.captureGrid || this.createCaptureGrid(output.widthPx, output.heightPx, output.megapixels);
         const stripePixelLimit = STREAMING_STRIPE_MAX_MEGAPIXELS * 1000000;
         const memoryBoundStripeHeight = Math.max(1, Math.floor(stripePixelLimit / Math.max(1, output.widthPx)));
         const stripeHeight = Math.min(STREAMING_STRIPE_HEIGHT_PX, memoryBoundStripeHeight, output.heightPx);
-        const columns = Math.ceil(output.widthPx / output.coreWidthPx);
-        const rows = Math.ceil(output.heightPx / stripeHeight);
+        let tileCount = 0;
+        let stripes = 0;
+        for (let gridY = 0; gridY < grid.rows; gridY++) {
+            const startY = this.getGridBoundary(output.heightPx, gridY, grid.rows);
+            const endY = this.getGridBoundary(output.heightPx, gridY + 1, grid.rows);
+            for (let outputY = startY; outputY < endY; outputY += stripeHeight) {
+                stripes += 1;
+                for (let gridX = 0; gridX < grid.columns; gridX++) {
+                    const startX = this.getGridBoundary(output.widthPx, gridX, grid.columns);
+                    const endX = this.getGridBoundary(output.widthPx, gridX + 1, grid.columns);
+                    tileCount += Math.ceil((endX - startX) / output.coreWidthPx);
+                }
+            }
+        }
         return {
             stripeHeight,
-            columns,
-            rows,
-            tileCount: columns * rows,
+            columns: grid.columns,
+            rows: grid.rows,
+            grid,
+            stripes,
+            tileCount,
         };
+    }
+
+    getDirectTileCount(plan) {
+        const output = plan.output;
+        const grid = output.captureGrid || this.createCaptureGrid(output.widthPx, output.heightPx, output.megapixels);
+        let tileCount = 0;
+        for (let gridY = 0; gridY < grid.rows; gridY++) {
+            const startY = this.getGridBoundary(output.heightPx, gridY, grid.rows);
+            const endY = this.getGridBoundary(output.heightPx, gridY + 1, grid.rows);
+            const rows = Math.ceil((endY - startY) / output.coreWidthPx);
+            for (let gridX = 0; gridX < grid.columns; gridX++) {
+                const startX = this.getGridBoundary(output.widthPx, gridX, grid.columns);
+                const endX = this.getGridBoundary(output.widthPx, gridX + 1, grid.columns);
+                tileCount += rows * Math.ceil((endX - startX) / output.coreWidthPx);
+            }
+        }
+        return tileCount;
     }
 
     updateCaptureProgress(capture, current, total) {
@@ -1181,7 +1329,7 @@ class Mod extends shapez.Mod {
     // Builds a valid PNG without ever allocating a full-width × full-height
     // canvas. Only a 512px-tall image strip and one render tile are alive at
     // any time; this is especially valuable for sparse, very wide factories.
-    async createStreamedPngBlob(root, plan, tileCanvas, tileContext, readbackCanvas, readbackContext, capture) {
+    async createStreamedPngBlob(root, plan, tileCanvas, tileContext, readbackCanvas, readbackContext, capture, scaleCanvas, scaleContext) {
         // Keep the old five-argument form usable for unit tests and older hooks.
         if (!capture) {
             capture = readbackCanvas;
@@ -1206,48 +1354,70 @@ class Mod extends shapez.Mod {
         })();
         let tileIndex = 0;
         try {
-            for (let outputY = 0; outputY < output.heightPx; outputY += layout.stripeHeight) {
-                const stripeHeight = Math.min(layout.stripeHeight, output.heightPx - outputY);
-                const stripTiles = [];
-                for (let outputX = 0; outputX < output.widthPx; outputX += output.coreWidthPx) {
-                    if (capture.cancelled) throw new CaptureCancelledError();
-                    const tileWidth = Math.min(output.coreWidthPx, output.widthPx - outputX);
-                    this.renderTile(root, plan, tileCanvas, tileContext, outputX, outputY, tileWidth, stripeHeight);
-                    // Render tiles stay GPU-preferred. Read pixels through a
-                    // separate CPU-oriented canvas only when encoding PNG rows.
-                    const pixels = this.readTilePixels(
-                        tileCanvas,
-                        readbackCanvas,
-                        readbackContext,
-                        tileWidth,
-                        stripeHeight
-                    ) || tileContext.getImageData(
-                        TILE_BLEED_PX,
-                        TILE_BLEED_PX,
-                        tileWidth,
-                        stripeHeight
-                    ).data;
-                    stripTiles.push({ width: tileWidth, pixels });
-                    tileIndex += 1;
-                    this.updateCaptureProgress(capture, tileIndex, layout.tileCount);
-                    await this.yieldToBrowser();
-                }
-
-                const rowByteLength = output.widthPx * 4 + 1;
-                const scanlines = new Uint8Array(rowByteLength * stripeHeight);
-                for (let line = 0; line < stripeHeight; line++) {
-                    let destination = line * rowByteLength;
-                    scanlines[destination] = 0; // PNG filter: None
-                    destination += 1;
-                    for (const tile of stripTiles) {
-                        const start = line * tile.width * 4;
-                        const end = start + tile.width * 4;
-                        scanlines.set(tile.pixels.subarray(start, end), destination);
-                        destination += tile.width * 4;
+            // PNG rows must remain top-to-bottom, while each row is composed from
+            // a 25–64-cell aspect-aware capture grid. Every cell follows the same
+            // bounded, GPU-preferred tile pipeline before the final compression pass.
+            for (let gridY = 0; gridY < layout.grid.rows; gridY++) {
+                const gridStartY = this.getGridBoundary(output.heightPx, gridY, layout.grid.rows);
+                const gridEndY = this.getGridBoundary(output.heightPx, gridY + 1, layout.grid.rows);
+                for (let outputY = gridStartY; outputY < gridEndY; outputY += layout.stripeHeight) {
+                    const stripeHeight = Math.min(layout.stripeHeight, gridEndY - outputY);
+                    const stripTiles = [];
+                    for (let gridX = 0; gridX < layout.grid.columns; gridX++) {
+                        const gridStartX = this.getGridBoundary(output.widthPx, gridX, layout.grid.columns);
+                        const gridEndX = this.getGridBoundary(output.widthPx, gridX + 1, layout.grid.columns);
+                        for (let outputX = gridStartX; outputX < gridEndX; outputX += output.coreWidthPx) {
+                            if (capture.cancelled) throw new CaptureCancelledError();
+                            const tileWidth = Math.min(output.coreWidthPx, gridEndX - outputX);
+                            const rendered = this.renderCaptureTile(
+                                root,
+                                plan,
+                                tileCanvas,
+                                tileContext,
+                                scaleCanvas,
+                                scaleContext,
+                                outputX,
+                                outputY,
+                                tileWidth,
+                                stripeHeight
+                            );
+                            // Render tiles stay GPU-preferred. Read pixels through a
+                            // separate CPU-oriented canvas only when encoding PNG rows.
+                            const pixels = this.readTilePixels(
+                                rendered.canvas,
+                                readbackCanvas,
+                                readbackContext,
+                                tileWidth,
+                                stripeHeight
+                            ) || (rendered.canvas === scaleCanvas && scaleContext ? scaleContext : tileContext).getImageData(
+                                TILE_BLEED_PX,
+                                TILE_BLEED_PX,
+                                tileWidth,
+                                stripeHeight
+                            ).data;
+                            stripTiles.push({ width: tileWidth, pixels });
+                            tileIndex += 1;
+                            this.updateCaptureProgress(capture, tileIndex, layout.tileCount);
+                            await this.yieldToBrowser();
+                        }
                     }
+
+                    const rowByteLength = output.widthPx * 4 + 1;
+                    const scanlines = new Uint8Array(rowByteLength * stripeHeight);
+                    for (let line = 0; line < stripeHeight; line++) {
+                        let destination = line * rowByteLength;
+                        scanlines[destination] = 0; // PNG filter: None
+                        destination += 1;
+                        for (const tile of stripTiles) {
+                            const start = line * tile.width * 4;
+                            const end = start + tile.width * 4;
+                            scanlines.set(tile.pixels.subarray(start, end), destination);
+                            destination += tile.width * 4;
+                        }
+                    }
+                    if (capture.cancelled) throw new CaptureCancelledError();
+                    await writer.write(scanlines);
                 }
-                if (capture.cancelled) throw new CaptureCancelledError();
-                await writer.write(scanlines);
             }
             await writer.close();
             await drain;
@@ -1297,7 +1467,7 @@ class Mod extends shapez.Mod {
             streamed,
             status: this.t("rendering", {
                 current: 0,
-                total: streamingLayout ? streamingLayout.tileCount : plan.output.tileCount,
+                total: streamingLayout ? streamingLayout.tileCount : this.getDirectTileCount(plan),
                 percent: 0,
             }),
         };
@@ -1305,6 +1475,7 @@ class Mod extends shapez.Mod {
         this.updateUI();
         let finalCanvas = null;
         let tileCanvas = null;
+        let scaleCanvas = null;
         let readbackCanvas = null;
         let freezeSnapshot = null;
         try {
@@ -1318,6 +1489,16 @@ class Mod extends shapez.Mod {
                 willReadFrequently: false,
             });
             if (!tileContext) throw new Error("tile-canvas-context-unavailable");
+            let scaleContext = null;
+            if (plan.output.sourceScale < plan.output.effectiveScale - 0.0001) {
+                scaleCanvas = document.createElement("canvas");
+                scaleContext = scaleCanvas.getContext("2d", {
+                    alpha: false,
+                    desynchronized: true,
+                    willReadFrequently: false,
+                });
+                if (!scaleContext) throw new Error("scale-canvas-context-unavailable");
+            }
             let blob;
             if (streamed) {
                 // PNG encoding ultimately requires CPU bytes. Isolate that readback
@@ -1337,37 +1518,64 @@ class Mod extends shapez.Mod {
                     tileContext,
                     readbackCanvas,
                     readbackContext,
-                    capture
+                    capture,
+                    scaleCanvas,
+                    scaleContext
                 );
             } else {
                 finalCanvas = document.createElement("canvas");
                 finalCanvas.width = plan.output.widthPx;
                 finalCanvas.height = plan.output.heightPx;
-                const finalContext = finalCanvas.getContext("2d", { alpha: false });
+                const finalContext = finalCanvas.getContext("2d", {
+                    alpha: false,
+                    desynchronized: true,
+                    willReadFrequently: false,
+                });
                 if (!finalContext) throw new Error("final-canvas-context-unavailable");
                 finalContext.imageSmoothingEnabled = false;
 
                 let tileIndex = 0;
-                for (let outputY = 0; outputY < plan.output.heightPx; outputY += plan.output.coreWidthPx) {
-                    const tileHeight = Math.min(plan.output.coreWidthPx, plan.output.heightPx - outputY);
-                    for (let outputX = 0; outputX < plan.output.widthPx; outputX += plan.output.coreWidthPx) {
-                        if (capture.cancelled) throw new CaptureCancelledError();
-                        const tileWidth = Math.min(plan.output.coreWidthPx, plan.output.widthPx - outputX);
-                        this.renderTile(root, plan, tileCanvas, tileContext, outputX, outputY, tileWidth, tileHeight);
-                        finalContext.drawImage(
-                            tileCanvas,
-                            TILE_BLEED_PX,
-                            TILE_BLEED_PX,
-                            tileWidth,
-                            tileHeight,
-                            outputX,
-                            outputY,
-                            tileWidth,
-                            tileHeight
-                        );
-                        tileIndex += 1;
-                        this.updateCaptureProgress(capture, tileIndex, plan.output.tileCount);
-                        await this.yieldToBrowser();
+                const grid = plan.output.captureGrid;
+                const totalTiles = this.getDirectTileCount(plan);
+                for (let gridY = 0; gridY < grid.rows; gridY++) {
+                    const gridStartY = this.getGridBoundary(plan.output.heightPx, gridY, grid.rows);
+                    const gridEndY = this.getGridBoundary(plan.output.heightPx, gridY + 1, grid.rows);
+                    for (let outputY = gridStartY; outputY < gridEndY; outputY += plan.output.coreWidthPx) {
+                        const tileHeight = Math.min(plan.output.coreWidthPx, gridEndY - outputY);
+                        for (let gridX = 0; gridX < grid.columns; gridX++) {
+                            const gridStartX = this.getGridBoundary(plan.output.widthPx, gridX, grid.columns);
+                            const gridEndX = this.getGridBoundary(plan.output.widthPx, gridX + 1, grid.columns);
+                            for (let outputX = gridStartX; outputX < gridEndX; outputX += plan.output.coreWidthPx) {
+                                if (capture.cancelled) throw new CaptureCancelledError();
+                                const tileWidth = Math.min(plan.output.coreWidthPx, gridEndX - outputX);
+                                const rendered = this.renderCaptureTile(
+                                    root,
+                                    plan,
+                                    tileCanvas,
+                                    tileContext,
+                                    scaleCanvas,
+                                    scaleContext,
+                                    outputX,
+                                    outputY,
+                                    tileWidth,
+                                    tileHeight
+                                );
+                                finalContext.drawImage(
+                                    rendered.canvas,
+                                    TILE_BLEED_PX,
+                                    TILE_BLEED_PX,
+                                    tileWidth,
+                                    tileHeight,
+                                    outputX,
+                                    outputY,
+                                    tileWidth,
+                                    tileHeight
+                                );
+                                tileIndex += 1;
+                                this.updateCaptureProgress(capture, tileIndex, totalTiles);
+                                await this.yieldToBrowser();
+                            }
+                        }
                     }
                 }
                 if (capture.cancelled) throw new CaptureCancelledError();
@@ -1393,6 +1601,7 @@ class Mod extends shapez.Mod {
         } finally {
             this.restoreGame(freezeSnapshot);
             if (tileCanvas) { tileCanvas.width = 0; tileCanvas.height = 0; }
+            if (scaleCanvas) { scaleCanvas.width = 0; scaleCanvas.height = 0; }
             if (readbackCanvas) { readbackCanvas.width = 0; readbackCanvas.height = 0; }
             if (finalCanvas) { finalCanvas.width = 0; finalCanvas.height = 0; }
             capture.active = false;

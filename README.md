@@ -17,7 +17,7 @@
 | 分类 | Mod | 一句话介绍 | 独立介绍 |
 | --- | --- | --- | --- |
 | 基础设施 | `structured-mod-settings.js` | 在游戏原生设置页提供统一的「游戏模组（MODS）」分类和持久化设置 API。 | [查看](docs/mods/structured-mod-settings.md) |
-| 物流 | `belt_speed_10x.js` | 传送带 1–50× 调速，地下传送带距离独立设置，并同步原版平衡器与读取器。 | [查看](docs/mods/belt-speed-control.md) |
+| 物流 | `belt_speed_10x.js` | 传送带 1–50× 调速；地下传送带扩展至四级，距离独立设置，并同步原版平衡器与读取器。 | [查看](docs/mods/belt-speed-control.md) |
 | 物流 | `balancer-variants.js` | 原版平衡器新增 4 / 5 / 8 / 10 / 16 路变形体。 | [查看](docs/mods/balancer-variants.md) |
 | 建造 | `key-reform.js` | 使用 T/R + 数字键或滚轮快速切换变形体和朝向。 | [查看](docs/mods/key-reform.md) |
 | 视图 | `zoomout-before-mapmode.js` | 放大进入地图总览前的缩放范围，并简化低缩放时的传送带渲染。 | [查看](docs/mods/zoomout-before-mapmode.md) |

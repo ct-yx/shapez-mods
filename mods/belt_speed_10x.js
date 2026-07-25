@@ -3,6 +3,8 @@ const METADATA = {
     website: "https://github.com/ct-yx/shapez-mods",
     author: "ct-yx & Codex",
     name: "Belt Speed Control",
+    // Keep the existing settings namespace so current speed/range choices
+    // remain intact while the two new tier fields receive their defaults.
     version: "1.4.0",
     id: "belt-speed-x10",
     description: "Adjusts belt speeds, underground belt range, the vanilla 2-way balancer and replaces the built-in belt reader processor.",
@@ -14,6 +16,8 @@ const METADATA = {
         staticBeltAnimationsAtHighMultiplier: true,
         tunnelRangeMultiplierTier1: 1,
         tunnelRangeMultiplierTier2: 1,
+        tunnelRangeMultiplierTier3: 1,
+        tunnelRangeMultiplierTier4: 1,
     },
 };
 
@@ -24,6 +28,7 @@ const MAX_MULTIPLIER = 50;
 const DEFAULT_TUNNEL_RANGE_MULTIPLIER = 1;
 const MIN_TUNNEL_RANGE_MULTIPLIER = 1;
 const MAX_TUNNEL_RANGE_MULTIPLIER = 10;
+const UNDERGROUND_BELT_BASE_RANGES = [5, 9, 13, 17];
 
 class Mod extends shapez.Mod {
     init() {
@@ -37,9 +42,16 @@ class Mod extends shapez.Mod {
         this.settings.tunnelRangeMultiplierTier2 = this.normalizeTunnelRangeMultiplier(
             this.settings.tunnelRangeMultiplierTier2
         );
+        this.settings.tunnelRangeMultiplierTier3 = this.normalizeTunnelRangeMultiplier(
+            this.settings.tunnelRangeMultiplierTier3
+        );
+        this.settings.tunnelRangeMultiplierTier4 = this.normalizeTunnelRangeMultiplier(
+            this.settings.tunnelRangeMultiplierTier4
+        );
         this.settingsPanel = null;
         this.tunnelRangeRevision = 0;
 
+        this.installExtendedUndergroundBeltTiers();
         this.registerSettingsWhenAvailable();
         this.installSpeedPatches();
         this.installStaticBeltAnimationPatches();
@@ -181,6 +193,42 @@ class Mod extends shapez.Mod {
                         this.saveSettings();
                     },
                 },
+                {
+                    id: "tunnelRangeMultiplierTier3",
+                    type: "number",
+                    label: { en: "Underground belt range · Tier 3", zh: "三级地下传送带范围" },
+                    description: {
+                        en: "Range multiplier: 1x–10x. Base range is 13 tiles; 10x reaches 130 tiles.",
+                        zh: "范围倍率：1x–10x。基础最远 13 格；10x 时最远 130 格。",
+                    },
+                    min: MIN_TUNNEL_RANGE_MULTIPLIER,
+                    max: MAX_TUNNEL_RANGE_MULTIPLIER,
+                    step: 1,
+                    default: DEFAULT_TUNNEL_RANGE_MULTIPLIER,
+                    onChange: value => {
+                        this.settings.tunnelRangeMultiplierTier3 = this.normalizeTunnelRangeMultiplier(value);
+                        this.applyTunnelRangeMultipliers(this.getTunnelRangeMultipliers());
+                        this.saveSettings();
+                    },
+                },
+                {
+                    id: "tunnelRangeMultiplierTier4",
+                    type: "number",
+                    label: { en: "Underground belt range · Tier 4", zh: "四级地下传送带范围" },
+                    description: {
+                        en: "Range multiplier: 1x–10x. Base range is 17 tiles; 10x reaches 170 tiles.",
+                        zh: "范围倍率：1x–10x。基础最远 17 格；10x 时最远 170 格。",
+                    },
+                    min: MIN_TUNNEL_RANGE_MULTIPLIER,
+                    max: MAX_TUNNEL_RANGE_MULTIPLIER,
+                    step: 1,
+                    default: DEFAULT_TUNNEL_RANGE_MULTIPLIER,
+                    onChange: value => {
+                        this.settings.tunnelRangeMultiplierTier4 = this.normalizeTunnelRangeMultiplier(value);
+                        this.applyTunnelRangeMultipliers(this.getTunnelRangeMultipliers());
+                        this.saveSettings();
+                    },
+                },
             ],
         });
 
@@ -195,6 +243,12 @@ class Mod extends shapez.Mod {
         );
         this.settings.tunnelRangeMultiplierTier2 = this.normalizeTunnelRangeMultiplier(
             this.settingsPanel.get("tunnelRangeMultiplierTier2")
+        );
+        this.settings.tunnelRangeMultiplierTier3 = this.normalizeTunnelRangeMultiplier(
+            this.settingsPanel.get("tunnelRangeMultiplierTier3")
+        );
+        this.settings.tunnelRangeMultiplierTier4 = this.normalizeTunnelRangeMultiplier(
+            this.settingsPanel.get("tunnelRangeMultiplierTier4")
         );
         this.applyTunnelRangeMultipliers(this.getTunnelRangeMultipliers());
     }
@@ -231,10 +285,173 @@ class Mod extends shapez.Mod {
         const tier2Value = this.settingsPanel
             ? this.settingsPanel.get("tunnelRangeMultiplierTier2")
             : this.settings.tunnelRangeMultiplierTier2;
+        const tier3Value = this.settingsPanel
+            ? this.settingsPanel.get("tunnelRangeMultiplierTier3")
+            : this.settings.tunnelRangeMultiplierTier3;
+        const tier4Value = this.settingsPanel
+            ? this.settingsPanel.get("tunnelRangeMultiplierTier4")
+            : this.settings.tunnelRangeMultiplierTier4;
         return [
             this.normalizeTunnelRangeMultiplier(tier1Value),
             this.normalizeTunnelRangeMultiplier(tier2Value),
+            this.normalizeTunnelRangeMultiplier(tier3Value),
+            this.normalizeTunnelRangeMultiplier(tier4Value),
         ];
+    }
+
+    installExtendedUndergroundBeltTiers() {
+        const meta = shapez.MetaUndergroundBeltBuilding;
+        const config = shapez.globalConfig;
+        if (!meta || !meta.prototype || !config) return;
+
+        // UndergroundBeltComponent.tier is an integer and the vanilla systems
+        // already use it to decide both pairing and range. Keep the original
+        // 5 / 9 progression, then continue it by four tiles for two new tiers.
+        const ranges = config.undergroundBeltMaxTilesByTier;
+        if (Array.isArray(ranges)) {
+            for (let index = 0; index < UNDERGROUND_BELT_BASE_RANGES.length; ++index) {
+                if (!Number.isFinite(Number(ranges[index]))) {
+                    ranges[index] = UNDERGROUND_BELT_BASE_RANGES[index];
+                }
+            }
+        }
+
+        const marker = "__beltSpeedControlUndergroundTiers_150";
+        if (meta.prototype[marker]) return;
+
+        const tier2Variant = (shapez.enumUndergroundBeltVariants
+            && shapez.enumUndergroundBeltVariants.tier2) || "tier2";
+        const customTiers = {
+            tier3: 2,
+            tier4: 3,
+        };
+        const isCustomTier = variant => Object.prototype.hasOwnProperty.call(customTiers, variant);
+        const hasTier2Reward = root => {
+            const rewards = shapez.enumHubGoalRewards;
+            const reward = rewards && rewards.reward_underground_belt_tier_2;
+            return !reward || (root && root.hubGoals
+                && typeof root.hubGoals.isRewardUnlocked === "function"
+                && root.hubGoals.isRewardUnlocked(reward));
+        };
+
+        // This registers the two variants with the game code cache so they
+        // participate in normal T-key cycling and are valid savegame codes.
+        // Sprites are deliberately supplied below by mapping them to tier2.
+        if (typeof this.modInterface.addVariantToExistingBuilding === "function") {
+            for (const [variant, tier] of Object.entries(customTiers)) {
+                this.modInterface.addVariantToExistingBuilding(meta, variant, {
+                    rotationVariants: [0, 1],
+                    name: "Underground Belt Tier " + (tier + 1),
+                    description: "Extended underground belt tier with a longer reach.",
+                    isUnlocked: hasTier2Reward,
+                });
+                this.modInterface.registerBuildingTranslation(meta, variant, {
+                    language: "zh-CN",
+                    name: "地下传送带 · " + (tier + 1) + " 级",
+                    description: "扩展地下传送带等级，拥有更远的连接距离。",
+                });
+            }
+        } else {
+            return;
+        }
+
+        const mod = this;
+        this.modInterface.extendClass(meta, ({ $old }) => ({
+            // tier3 and tier4 reuse the native tier2 artwork for both the
+            // placement selector and the building/blueprint render caches.
+            getPreviewSprite(rotationVariant, variant) {
+                return $old.getPreviewSprite.call(
+                    this,
+                    rotationVariant,
+                    isCustomTier(variant) ? tier2Variant : variant
+                );
+            },
+            getBlueprintSprite(rotationVariant, variant) {
+                return $old.getBlueprintSprite.call(
+                    this,
+                    rotationVariant,
+                    isCustomTier(variant) ? tier2Variant : variant
+                );
+            },
+            updateVariants(entity, rotationVariant, variant) {
+                if (!isCustomTier(variant)) {
+                    return $old.updateVariants.call(this, entity, rotationVariant, variant);
+                }
+
+                // Let vanilla configure sender/receiver slots and mode, then
+                // promote the component to the actual extended tier.
+                const result = $old.updateVariants.call(this, entity, rotationVariant, tier2Variant);
+                entity.components.UndergroundBelt.tier = customTiers[variant];
+                return result;
+            },
+            computeOptimalDirectionAndRotationVariantAtTile(options) {
+                if (!options || !isCustomTier(options.variant)) {
+                    return $old.computeOptimalDirectionAndRotationVariantAtTile.call(this, options);
+                }
+                return mod.computeExtendedUndergroundBeltDirection(options, customTiers[options.variant]);
+            },
+            getAdditionalStatistics(root, variant) {
+                if (!isCustomTier(variant)) {
+                    return $old.getAdditionalStatistics.call(this, root, variant);
+                }
+
+                // Reuse the vanilla speed statistic and replace only the
+                // range row, which is indexed through vanilla's two-tier map.
+                const statistics = $old.getAdditionalStatistics.call(this, root, tier2Variant);
+                const range = shapez.globalConfig.undergroundBeltMaxTilesByTier[customTiers[variant]];
+                if (Array.isArray(statistics) && statistics[0]) {
+                    const infoTexts = shapez.T && shapez.T.ingame
+                        && shapez.T.ingame.buildingPlacement
+                        && shapez.T.ingame.buildingPlacement.infoTexts;
+                    statistics[0][1] = infoTexts && typeof infoTexts.tiles === "string"
+                        ? infoTexts.tiles.replace("<x>", String(range))
+                        : String(range) + " tiles";
+                }
+                return statistics;
+            },
+        }));
+
+        meta.prototype[marker] = true;
+    }
+
+    computeExtendedUndergroundBeltDirection(options, tier) {
+        const direction = shapez.enumAngleToDirection[options.rotation];
+        const vector = shapez.enumDirectionToVector[direction];
+        const oppositeRotation = (options.rotation + 180) % 360;
+        const range = shapez.globalConfig.undergroundBeltMaxTilesByTier[tier] || 1;
+        const modes = shapez.enumUndergroundBeltMode;
+        let checkedTile = options.tile;
+
+        for (let distance = 1; distance <= range; ++distance) {
+            checkedTile = checkedTile.addScalars(vector.x, vector.y);
+            const entity = options.root.map.getTileContent(checkedTile, "regular");
+            if (!entity) continue;
+
+            const tunnel = entity.components && entity.components.UndergroundBelt;
+            const staticEntity = entity.components && entity.components.StaticMapEntity;
+            if (!tunnel || !staticEntity || tunnel.tier !== tier) continue;
+
+            if (staticEntity.rotation === oppositeRotation) {
+                if (tunnel.mode !== modes.sender) break;
+                return {
+                    rotation: oppositeRotation,
+                    rotationVariant: 1,
+                    connectedEntities: [entity],
+                };
+            }
+            if (staticEntity.rotation === options.rotation) {
+                if (tunnel.mode === modes.receiver) {
+                    return {
+                        rotation: options.rotation,
+                        rotationVariant: 0,
+                        connectedEntities: [entity],
+                    };
+                }
+                break;
+            }
+        }
+
+        return { rotation: options.rotation, rotationVariant: 0 };
     }
 
     applyTunnelRangeMultipliers(multipliers) {
@@ -248,6 +465,16 @@ class Mod extends shapez.Mod {
         }
 
         const baseRanges = config[baseKey];
+        // A development hot-reload can retain the old two-value baseline
+        // while the live range array has already gained tiers 3 and 4.
+        // Complete that cached baseline before applying the four multipliers.
+        for (let index = 0; index < UNDERGROUND_BELT_BASE_RANGES.length; ++index) {
+            if (!Number.isFinite(Number(baseRanges[index]))) {
+                baseRanges[index] = Number.isFinite(Number(ranges[index]))
+                    ? Number(ranges[index])
+                    : UNDERGROUND_BELT_BASE_RANGES[index];
+            }
+        }
         let changed = false;
         for (let index = 0; index < baseRanges.length; ++index) {
             const multiplier = this.normalizeTunnelRangeMultiplier(

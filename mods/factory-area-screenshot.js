@@ -3,14 +3,13 @@ const METADATA = {
     website: "https://github.com/ct-yx/shapez-mods",
     author: "ct-yx & Codex",
     name: "Factory Area Snapshot",
-    version: "1.3.0",
+    version: "1.4.0",
     id: "factory-area-snapshot",
     description: "Exports high-resolution tiled PNGs of the factory or a map-overview selection.",
     minimumGameVersion: ">=1.5.0",
     doesNotAffectSavegame: true,
     settings: {
         paddingTiles: 4,
-        renderScale: 1,
         maxMegapixels: 64,
         includeMovingItems: true,
         pauseDuringCapture: true,
@@ -18,13 +17,9 @@ const METADATA = {
 };
 
 const TILE_SIZE = 32;
-const MAP_CHUNK_TILES = 16;
 const DEFAULT_PADDING_TILES = 4;
 const MIN_PADDING_TILES = 0;
 const MAX_PADDING_TILES = 32;
-const DEFAULT_RENDER_SCALE = 1;
-const MIN_RENDER_SCALE = 0.25;
-const MAX_RENDER_SCALE = 4;
 const DEFAULT_MAX_MEGAPIXELS = 64;
 const MIN_MAX_MEGAPIXELS = 16;
 const MAX_MAX_MEGAPIXELS = 1024;
@@ -52,8 +47,9 @@ const STRINGS = {
         subtitle: "TILED HIGH-RES PNG · REGULAR CAMERA RENDER",
         padding: "Outer padding",
         paddingHint: "tiles beyond placed machines",
-        scale: "Render scale",
-        budget: "Image budget",
+        resolution: "Target resolution",
+        resolutionHint: "total output pixels · render scale is automatic",
+        tileUnit: "tiles",
         items: "Include belt items",
         pause: "Pause simulation while rendering",
         inspect: "FACTORY AREA",
@@ -65,7 +61,7 @@ const STRINGS = {
         selectedArea: "Map selection",
         exportArea: "Export area",
         output: "Output",
-        scaleResult: "Effective scale",
+        scaleResult: "Auto render scale",
         chunks: "Tiles",
         waiting: "Analyze the placed factory area before exporting.",
         ready: "Ready. Rendering is split into tiles to keep the UI responsive.",
@@ -79,15 +75,14 @@ const STRINGS = {
         streamingEncode: "Streaming PNG rows to keep the working canvas small…",
         done: "PNG download started.",
         cancelled: "Capture cancelled.",
-        tooLarge: "This export area needs {needed}x or lower to stay within the image limit. Lower the render scale, reduce padding, or choose a larger image budget.",
-        allocationFailed: "The browser could not allocate this image. Try a smaller image budget or render scale.",
+        tooLarge: "This export area exceeds the available image limit.",
+        allocationFailed: "The browser could not allocate this image. Try a lower target resolution.",
         unavailable: "Enter a running game to use the snapshot tool.",
         layerNote: "The PNG always uses the regular factory render; Map Overview is only used to choose an area.",
         settingsTitle: "Factory Area Snapshot",
         settingsDescription: "Exports the bounds of placed machines with a configurable safety margin. The export uses regular-camera rendering in tiles.",
         settingPadding: "Outer padding",
-        settingScale: "Requested render scale",
-        settingBudget: "Maximum image budget",
+        settingResolution: "Target output resolution",
         settingItems: "Include moving belt items",
         settingPause: "Pause simulation while capturing",
     },
@@ -99,8 +94,9 @@ const STRINGS = {
         subtitle: "分块高分 PNG · 普通镜头渲染",
         padding: "外围留白",
         paddingHint: "在已放置机器外额外保留的格数",
-        scale: "渲染倍率",
-        budget: "图片预算",
+        resolution: "目标分辨率",
+        resolutionHint: "总输出像素 · 渲染倍率自动计算",
+        tileUnit: "格",
         items: "包含传送带上的物品",
         pause: "渲染期间暂停模拟",
         inspect: "机器范围",
@@ -112,7 +108,7 @@ const STRINGS = {
         selectedArea: "地图选区",
         exportArea: "截图范围",
         output: "输出尺寸",
-        scaleResult: "实际倍率",
+        scaleResult: "自动计算倍率",
         chunks: "分块数量",
         waiting: "先分析已放置机器的范围，再导出截图。",
         ready: "已就绪。截图会分块渲染与拼接，避免长时间卡住界面。",
@@ -126,15 +122,14 @@ const STRINGS = {
         streamingEncode: "正在流式编码 PNG，以保持较小的工作画布…",
         done: "已开始下载 PNG。",
         cancelled: "已取消截图。",
-        tooLarge: "该截图范围需要降到 {needed}x 或更低才能符合图片限制。请降低渲染倍率、减少留白，或提高图片预算。",
-        allocationFailed: "浏览器无法分配这张图片所需的内存。请降低图片预算或渲染倍率。",
+        tooLarge: "该截图范围超过可用图片限制。",
+        allocationFailed: "浏览器无法分配这张图片所需的内存。请降低目标分辨率。",
         unavailable: "进入正在运行的存档后才能使用截图工具。",
         layerNote: "PNG 始终按普通工厂层渲染；地图总览只用于框选截图区域。",
         settingsTitle: "工厂区域截图",
         settingsDescription: "以已放置机器的边界加上可配置留白导出 PNG；使用普通镜头渲染路径并分块拼接。",
         settingPadding: "外围留白",
-        settingScale: "目标渲染倍率",
-        settingBudget: "最大图片预算",
+        settingResolution: "目标输出分辨率",
         settingItems: "包含传送带上的动态物品",
         settingPause: "截图时暂停模拟",
     },
@@ -168,7 +163,6 @@ class Mod extends shapez.Mod {
         this.statusMessage = "";
 
         this.settings.paddingTiles = this.normalizePadding(this.settings.paddingTiles);
-        this.settings.renderScale = this.normalizeRenderScale(this.settings.renderScale);
         this.settings.maxMegapixels = this.normalizeMegapixels(this.settings.maxMegapixels);
         this.settings.includeMovingItems = this.settings.includeMovingItems !== false;
         this.settings.pauseDuringCapture = this.settings.pauseDuringCapture !== false;
@@ -229,12 +223,6 @@ class Mod extends shapez.Mod {
         return Math.max(MIN_PADDING_TILES, Math.min(MAX_PADDING_TILES, number));
     }
 
-    normalizeRenderScale(value) {
-        const number = Number(value);
-        if (!Number.isFinite(number)) return DEFAULT_RENDER_SCALE;
-        return Math.max(MIN_RENDER_SCALE, Math.min(MAX_RENDER_SCALE, Math.round(number * 100) / 100));
-    }
-
     normalizeMegapixels(value) {
         const number = Math.round(Number(value));
         if (!Number.isFinite(number)) return DEFAULT_MAX_MEGAPIXELS;
@@ -285,27 +273,12 @@ class Mod extends shapez.Mod {
                     onChange: value => this.applySetting("paddingTiles", value),
                 },
                 {
-                    id: "renderScale",
-                    type: "number",
-                    label: { en: STRINGS.en.settingScale, zh: STRINGS.zh.settingScale },
-                    description: {
-                        en: "Pixels per map pixel, from 0.25x to 4x. The image budget can lower this automatically.",
-                        zh: "每个地图像素的输出倍率，范围 0.25x–4x；若超过图片预算会自动降低。",
-                    },
-                    min: MIN_RENDER_SCALE,
-                    max: MAX_RENDER_SCALE,
-                    step: 0.25,
-                    suffix: "x",
-                    default: this.settings.renderScale,
-                    onChange: value => this.applySetting("renderScale", value),
-                },
-                {
                     id: "maxMegapixels",
                     type: "number",
-                    label: { en: STRINGS.en.settingBudget, zh: STRINGS.zh.settingBudget },
+                    label: { en: STRINGS.en.settingResolution, zh: STRINGS.zh.settingResolution },
                     description: {
-                        en: "PNG budget, 16–1024 MP. At 96 MP and above, compatible browsers stream the PNG in strips instead of holding the final image canvas in memory.",
-                        zh: "PNG 图片预算，范围 16–1024 MP。达到 96 MP 后，支持的浏览器会以条带流式编码，不常驻整张最终画布。",
+                        en: "Total output pixels: 16–1024 MP. Render scale is calculated from the selected resolution and current export area.",
+                        zh: "总输出像素：16–1024 MP。渲染倍率会根据所选分辨率和当前截图范围自动计算。",
                     },
                     min: MIN_MAX_MEGAPIXELS,
                     max: MAX_MAX_MEGAPIXELS,
@@ -340,7 +313,6 @@ class Mod extends shapez.Mod {
         });
 
         this.settings.paddingTiles = this.normalizePadding(this.settingsPanel.get("paddingTiles"));
-        this.settings.renderScale = this.normalizeRenderScale(this.settingsPanel.get("renderScale"));
         this.settings.maxMegapixels = this.normalizeMegapixels(this.settingsPanel.get("maxMegapixels"));
         this.settings.includeMovingItems = this.settingsPanel.get("includeMovingItems") !== false;
         this.settings.pauseDuringCapture = this.settingsPanel.get("pauseDuringCapture") !== false;
@@ -348,7 +320,6 @@ class Mod extends shapez.Mod {
 
     applySetting(key, value) {
         if (key === "paddingTiles") this.settings.paddingTiles = this.normalizePadding(value);
-        else if (key === "renderScale") this.settings.renderScale = this.normalizeRenderScale(value);
         else if (key === "maxMegapixels") this.settings.maxMegapixels = this.normalizeMegapixels(value);
         else if (key === "includeMovingItems") this.settings.includeMovingItems = Boolean(value);
         else if (key === "pauseDuringCapture") this.settings.pauseDuringCapture = Boolean(value);
@@ -378,10 +349,6 @@ class Mod extends shapez.Mod {
         return this.normalizePadding(this.getSetting("paddingTiles"));
     }
 
-    getRenderScale() {
-        return this.normalizeRenderScale(this.getSetting("renderScale"));
-    }
-
     getMaxMegapixels() {
         return this.normalizeMegapixels(this.getSetting("maxMegapixels"));
     }
@@ -404,7 +371,8 @@ class Mod extends shapez.Mod {
             <button type="button" class="fas-launcher" aria-expanded="false"></button>
             <section class="fas-panel" hidden>
                 <header class="fas-header">
-                    <div>
+                    <span class="fas-mark" aria-hidden="true">▣</span>
+                    <div class="fas-heading">
                         <strong class="fas-title"></strong>
                         <span class="fas-subtitle"></span>
                     </div>
@@ -412,9 +380,8 @@ class Mod extends shapez.Mod {
                 </header>
                 <div class="fas-note"></div>
                 <div class="fas-controls">
-                    <label class="fas-control"><span class="fas-label padding-label"></span><input class="fas-padding" type="range" min="0" max="32" step="1"><output class="fas-padding-value"></output><small class="fas-padding-hint"></small></label>
-                    <label class="fas-control"><span class="fas-label scale-label"></span><select class="fas-scale"><option value="0.25">0.25x</option><option value="0.5">0.5x</option><option value="0.75">0.75x</option><option value="1">1x</option><option value="1.5">1.5x</option><option value="2">2x</option><option value="3">3x</option><option value="4">4x</option></select></label>
-                    <label class="fas-control"><span class="fas-label budget-label"></span><select class="fas-budget"><option value="16">16 MP</option><option value="32">32 MP</option><option value="48">48 MP</option><option value="64">64 MP</option><option value="96">96 MP</option><option value="128">128 MP</option><option value="192">192 MP</option><option value="256">256 MP</option><option value="384">384 MP</option><option value="512">512 MP</option><option value="768">768 MP</option><option value="1024">1024 MP</option></select></label>
+                    <label class="fas-control fas-padding-control"><span class="fas-label padding-label"></span><input class="fas-padding" type="range" min="0" max="32" step="1"><output class="fas-padding-value"></output><small class="fas-padding-hint"></small></label>
+                    <label class="fas-control fas-resolution-control"><span class="fas-label resolution-label"></span><select class="fas-resolution"><option value="16">16 MP</option><option value="32">32 MP</option><option value="48">48 MP</option><option value="64">64 MP</option><option value="96">96 MP</option><option value="128">128 MP</option><option value="192">192 MP</option><option value="256">256 MP</option><option value="384">384 MP</option><option value="512">512 MP</option><option value="768">768 MP</option><option value="1024">1024 MP</option></select><small class="fas-resolution-hint"></small></label>
                     <label class="fas-check"><input class="fas-items" type="checkbox"><span class="fas-items-text"></span></label>
                     <label class="fas-check"><input class="fas-pause" type="checkbox"><span class="fas-pause-text"></span></label>
                 </div>
@@ -440,8 +407,8 @@ class Mod extends shapez.Mod {
             padding: container.querySelector(".fas-padding"),
             paddingValue: container.querySelector(".fas-padding-value"),
             paddingHint: container.querySelector(".fas-padding-hint"),
-            scale: container.querySelector(".fas-scale"),
-            budget: container.querySelector(".fas-budget"),
+            resolution: container.querySelector(".fas-resolution"),
+            resolutionHint: container.querySelector(".fas-resolution-hint"),
             items: container.querySelector(".fas-items"),
             pause: container.querySelector(".fas-pause"),
             analysis: container.querySelector(".fas-analysis"),
@@ -460,8 +427,7 @@ class Mod extends shapez.Mod {
         this.elements.launcher.addEventListener("click", () => this.togglePanel());
         this.elements.close.addEventListener("click", () => this.setPanelOpen(false));
         this.elements.padding.addEventListener("input", () => this.setSetting("paddingTiles", this.elements.padding.value));
-        this.elements.scale.addEventListener("change", () => this.setSetting("renderScale", this.elements.scale.value));
-        this.elements.budget.addEventListener("change", () => this.setSetting("maxMegapixels", this.elements.budget.value));
+        this.elements.resolution.addEventListener("change", () => this.setSetting("maxMegapixels", this.elements.resolution.value));
         this.elements.items.addEventListener("change", () => this.setSetting("includeMovingItems", this.elements.items.checked));
         this.elements.pause.addEventListener("change", () => this.setSetting("pauseDuringCapture", this.elements.pause.checked));
         this.elements.analyze.addEventListener("click", () => this.analyzeFactoryArea());
@@ -505,17 +471,15 @@ class Mod extends shapez.Mod {
         e.close.title = this.t("close");
         e.note.textContent = this.t("layerNote");
         e.container.querySelector(".padding-label").textContent = this.t("padding");
-        e.container.querySelector(".scale-label").textContent = this.t("scale");
-        e.container.querySelector(".budget-label").textContent = this.t("budget");
+        e.container.querySelector(".resolution-label").textContent = this.t("resolution");
+        e.resolutionHint.textContent = this.t("resolutionHint");
         const selectedMode = Boolean((analysis && analysis.source === "selection") || this.captureMode === "selection");
         e.paddingHint.textContent = selectedMode ? this.t("selectionExact") : this.t("paddingHint");
         e.padding.value = String(this.getPaddingTiles());
         e.padding.disabled = selectedMode || active;
-        e.paddingValue.textContent = this.getPaddingTiles() + " tiles";
-        e.scale.value = String(this.getRenderScale());
-        e.scale.disabled = active;
-        e.budget.value = String(this.getMaxMegapixels());
-        e.budget.disabled = active;
+        e.paddingValue.textContent = this.getPaddingTiles() + " " + this.t("tileUnit");
+        e.resolution.value = String(this.getMaxMegapixels());
+        e.resolution.disabled = active;
         e.items.checked = this.getIncludeMovingItems();
         e.items.disabled = active;
         e.pause.checked = this.getPauseDuringCapture();
@@ -616,7 +580,6 @@ class Mod extends shapez.Mod {
     calculateRenderPlan(machineBounds, options) {
         const usePadding = !options || options.usePadding !== false;
         const padding = usePadding ? this.normalizePadding(options && options.paddingTiles) : 0;
-        const requestedScale = this.normalizeRenderScale(options && options.renderScale);
         const maxMegapixels = this.normalizeMegapixels(options && options.maxMegapixels);
         const bounds = {
             x: machineBounds.x - padding,
@@ -624,9 +587,14 @@ class Mod extends shapez.Mod {
             w: machineBounds.w + padding * 2,
             h: machineBounds.h + padding * 2,
         };
-        const requestedWidth = Math.ceil(bounds.w * TILE_SIZE * requestedScale);
-        const requestedHeight = Math.ceil(bounds.h * TILE_SIZE * requestedScale);
+        const baseWidthPx = Math.max(1, bounds.w * TILE_SIZE);
+        const baseHeightPx = Math.max(1, bounds.h * TILE_SIZE);
         const maxPixels = maxMegapixels * 1000000;
+        // Resolution is the only user-facing quality setting. Work out the zoom
+        // that fills the chosen total pixel target for this exact export area.
+        const requestedScale = Math.sqrt(maxPixels / (baseWidthPx * baseHeightPx));
+        const requestedWidth = Math.ceil(baseWidthPx * requestedScale);
+        const requestedHeight = Math.ceil(baseHeightPx * requestedScale);
         // Streamed encoding renders into small tiles and writes PNG rows directly,
         // so its final image is not constrained by a browser Canvas edge. Keep the
         // legacy edge for the direct Canvas fallback only.
@@ -639,22 +607,14 @@ class Mod extends shapez.Mod {
             Math.sqrt(maxPixels / Math.max(1, requestedWidth * requestedHeight))
         );
         const effectiveScale = requestedScale * reduction;
-        if (effectiveScale < MIN_RENDER_SCALE - 0.0001) {
-            return {
-                error: this.t("tooLarge", { needed: this.formatScale(effectiveScale) }),
-                machineBounds,
-                bounds,
-                source: options && options.source === "selection" ? "selection" : "factory",
-                output: null,
-            };
-        }
-        const widthPx = Math.max(1, Math.ceil(bounds.w * TILE_SIZE * effectiveScale));
-        const heightPx = Math.max(1, Math.ceil(bounds.h * TILE_SIZE * effectiveScale));
-        const coreWorldTiles = Math.max(
-            MAP_CHUNK_TILES,
-            Math.floor(TILE_CORE_TARGET_PX / Math.max(1, TILE_SIZE * effectiveScale * MAP_CHUNK_TILES)) * MAP_CHUNK_TILES
-        );
-        const coreWidthPx = Math.max(1, Math.round(coreWorldTiles * TILE_SIZE * effectiveScale));
+        // Floor the final dimensions so the selected MP value remains a strict
+        // upper bound rather than being exceeded by pixel rounding.
+        const widthPx = Math.max(1, Math.floor(baseWidthPx * effectiveScale));
+        const heightPx = Math.max(1, Math.floor(baseHeightPx * effectiveScale));
+        // Tiles do not need to coincide with map chunks. This keeps individual
+        // temporary canvases near 2048 px even for a tiny area exported at 1 GP.
+        const coreWidthPx = Math.max(1, Math.min(TILE_CORE_TARGET_PX, widthPx, heightPx));
+        const coreWorldTiles = coreWidthPx / Math.max(1e-9, TILE_SIZE * effectiveScale);
         const tileCountX = Math.ceil(widthPx / coreWidthPx);
         const tileCountY = Math.ceil(heightPx / coreWidthPx);
         return {
@@ -697,7 +657,6 @@ class Mod extends shapez.Mod {
         }
         this.lastAnalysis = this.calculateRenderPlan(machineBounds, {
             paddingTiles: this.getPaddingTiles(),
-            renderScale: this.getRenderScale(),
             maxMegapixels: this.getMaxMegapixels(),
             usePadding: !useSelection,
             source: useSelection ? "selection" : "factory",
@@ -1326,6 +1285,15 @@ class Mod extends shapez.Mod {
     registerCss() {
         this.modInterface.registerCss(`
             #factory-area-snapshot-root {
+                --fas-ink: #101820;
+                --fas-panel: #1f303a;
+                --fas-panel-deep: #17242d;
+                --fas-line: #3c5967;
+                --fas-muted: #9ab1bd;
+                --fas-text: #edf6f9;
+                --fas-blue: #4bb8e8;
+                --fas-blue-hi: #91e0fa;
+                --fas-orange: #f0a43a;
                 position: fixed;
                 top: 12px;
                 left: 12px;
@@ -1333,11 +1301,12 @@ class Mod extends shapez.Mod {
                 display: flex;
                 flex-direction: column;
                 align-items: flex-start;
-                gap: 8px;
+                gap: 7px;
+                color: var(--fas-text);
+                font-family: "Roboto Condensed", "Arial Narrow", "Trebuchet MS", sans-serif;
+                font-variant-numeric: tabular-nums;
+                text-shadow: 0 1px 0 rgba(0, 0, 0, .55);
                 pointer-events: none;
-                color: #f2f7ff;
-                font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
-                -webkit-font-smoothing: antialiased;
             }
             #factory-area-snapshot-root button,
             #factory-area-snapshot-root input,
@@ -1346,70 +1315,87 @@ class Mod extends shapez.Mod {
                 position: fixed;
                 z-index: 10019;
                 box-sizing: border-box;
-                border: 2px solid rgba(110, 231, 255, .96);
-                border-radius: 2px;
-                background: rgba(55, 177, 255, .17);
-                box-shadow: 0 0 0 1px rgba(10, 30, 70, .72), 0 0 22px rgba(87, 218, 255, .48), inset 0 0 18px rgba(82, 218, 255, .13);
+                border: 2px solid #f0a43a;
+                outline: 1px solid rgba(7, 15, 20, .94);
+                background: repeating-linear-gradient(-45deg, rgba(240, 164, 58, .21) 0 9px, rgba(73, 184, 232, .16) 9px 18px);
+                box-shadow: 0 0 0 2px rgba(10, 17, 22, .46), inset 0 0 0 1px rgba(255, 237, 183, .34);
                 pointer-events: none;
             }
             .fas-launcher {
-                min-width: 80px;
-                height: 32px;
-                padding: 0 12px;
-                border: 1px solid rgba(121, 229, 255, 0.52);
-                border-radius: 9px;
-                background: linear-gradient(135deg, rgba(13, 32, 65, 0.96), rgba(29, 19, 73, 0.96));
-                box-shadow: 0 8px 22px rgba(0, 0, 0, 0.33), inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 0 18px rgba(60, 202, 255, 0.18);
-                color: #eafbff;
+                position: relative;
+                min-width: 96px;
+                height: 36px;
+                padding: 0 13px 0 18px;
+                border: 2px solid #0e171d;
+                border-radius: 3px;
+                outline: 1px solid #4d7180;
+                background: linear-gradient(#31505e, #1c313c);
+                box-shadow: 0 3px 0 #080e12, inset 0 1px 0 rgba(210, 245, 255, .23);
+                color: #effaff;
                 cursor: pointer;
-                font-size: 10px;
-                font-weight: 850;
-                letter-spacing: .09em;
+                font-size: 11px;
+                font-weight: 900;
+                letter-spacing: .08em;
             }
-            .fas-launcher:hover, .fas-launcher[aria-expanded="true"] { border-color: #7ce9ff; background: linear-gradient(135deg, #1b4b81, #4a2d92); }
+            .fas-launcher::before { content: ""; position: absolute; top: -2px; bottom: -2px; left: -2px; width: 6px; background: #f0a43a; box-shadow: inset -1px 0 rgba(113, 60, 10, .52); }
+            .fas-launcher:hover, .fas-launcher[aria-expanded="true"] { outline-color: var(--fas-blue-hi); background: linear-gradient(#437185, #294957); }
+            .fas-launcher:active { top: 2px; box-shadow: 0 1px 0 #080e12, inset 0 1px 0 rgba(0, 0, 0, .3); }
             .fas-panel {
-                width: min(356px, calc(100vw - 24px));
+                width: min(410px, calc(100vw - 24px));
                 max-height: calc(100vh - 68px);
                 overflow-y: auto;
                 box-sizing: border-box;
-                padding: 13px;
-                border: 1px solid rgba(131, 217, 255, .33);
-                border-radius: 15px;
-                background: linear-gradient(150deg, rgba(8, 20, 42, .985), rgba(20, 13, 50, .975));
-                box-shadow: 0 20px 50px rgba(0, 0, 0, .52), 0 0 34px rgba(77, 159, 255, .14);
+                border: 2px solid #0c151a;
+                border-radius: 4px;
+                outline: 1px solid #4b6a77;
+                background: var(--fas-panel-deep);
+                box-shadow: 0 5px 0 rgba(5, 9, 12, .94), 0 12px 28px rgba(0, 0, 0, .43), inset 0 0 0 1px rgba(148, 212, 237, .07);
                 pointer-events: auto;
                 scrollbar-width: thin;
-                scrollbar-color: rgba(121, 229, 255, .45) transparent;
+                scrollbar-color: #4b8299 #132029;
             }
             .fas-panel[hidden] { display: none; }
-            .fas-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
-            .fas-title { display: block; color: #f4f9ff; font-size: 11px; font-weight: 850; letter-spacing: .105em; }
-            .fas-subtitle { display: block; margin-top: 3px; color: #9fb7db; font-size: 8px; font-weight: 700; letter-spacing: .055em; }
-            .fas-close { width: 24px; height: 24px; flex: 0 0 auto; padding: 0; border: 1px solid rgba(255,255,255,.14); border-radius: 7px; background: rgba(255,255,255,.06); color: #b9cbeb; cursor: pointer; font-size: 18px !important; line-height: 18px; }
-            .fas-close:hover { color: white; background: rgba(255,255,255,.14); }
-            .fas-note { margin: 10px 0; padding: 7px 8px; border-left: 2px solid #68d8ff; border-radius: 4px; background: rgba(68, 148, 216, .11); color: #acd1ee; font-size: 9px; line-height: 1.35; }
-            .fas-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-            .fas-control { display: flex; min-width: 0; flex-direction: column; gap: 4px; padding: 8px; border: 1px solid rgba(144, 200, 255, .14); border-radius: 9px; background: rgba(5, 13, 31, .36); }
-            .fas-control:first-child { grid-column: 1 / -1; }
-            .fas-label { color: #adc3e3; font-size: 8px; font-weight: 800; letter-spacing: .07em; }
-            .fas-control input[type="range"] { width: 100%; accent-color: #62dfff; cursor: pointer; }
-            .fas-control output { color: #f3f8ff; font: 800 13px ui-monospace, SFMono-Regular, Menlo, monospace; }
-            .fas-control small { color: #7f9fc5; font-size: 8px; line-height: 1.25; }
-            .fas-control select { width: 100%; height: 26px; padding: 0 6px; border: 1px solid rgba(125, 205, 255, .28); border-radius: 6px; background: rgba(21, 38, 74, .82); color: #eef8ff; font-size: 11px; cursor: pointer; }
-            .fas-check { grid-column: 1 / -1; display: flex; align-items: center; gap: 7px; color: #c8d8ee; font-size: 10px; cursor: pointer; user-select: none; }
-            .fas-check input { width: 14px; height: 14px; margin: 0; accent-color: #60dfff; cursor: pointer; }
-            .fas-analysis { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 10px; }
-            .fas-analysis > div { min-width: 0; padding: 7px 8px; border: 1px solid rgba(140, 210, 255, .13); border-radius: 7px; background: rgba(4, 10, 25, .45); }
-            .fas-analysis span { display: block; color: #90afd2; font-size: 8px; font-weight: 750; letter-spacing: .05em; }
-            .fas-analysis strong { display: block; margin-top: 3px; overflow: hidden; color: #f0f8ff; font: 750 11px ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
-            .fas-analysis .fas-error { grid-column: 1 / -1; padding: 8px; border: 1px solid rgba(255, 111, 130, .35); border-radius: 8px; background: rgba(125, 22, 49, .23); color: #ffd3dc; font-size: 10px; line-height: 1.4; }
-            .fas-status { min-height: 16px; margin-top: 8px; color: #9bc8ee; font-size: 9px; line-height: 1.35; }
-            .fas-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 8px; }
-            .fas-actions button { min-width: 0; min-height: 29px; padding: 0 7px; border: 1px solid rgba(131, 215, 255, .29); border-radius: 7px; background: rgba(72, 118, 187, .2); color: #e9f7ff; cursor: pointer; font-size: 9px; font-weight: 850; letter-spacing: .04em; }
-            .fas-actions button:hover:not(:disabled) { border-color: #75e0ff; background: rgba(57, 146, 213, .46); }
+            .fas-header { display: flex; align-items: center; gap: 9px; min-height: 47px; box-sizing: border-box; padding: 8px 9px; border-bottom: 2px solid #101b21; background: linear-gradient(90deg, #2d5668 0, #284a58 74%, #1d3540 74%); box-shadow: inset 0 1px 0 rgba(221, 249, 255, .18); }
+            .fas-mark { display: grid; width: 27px; height: 27px; flex: 0 0 auto; place-items: center; border: 1px solid #a8eaff; border-radius: 2px; background: #24546b; box-shadow: inset 0 0 0 3px rgba(8, 21, 27, .31); color: #e7fbff; font-size: 16px; line-height: 1; }
+            .fas-heading { min-width: 0; flex: 1 1 auto; }
+            .fas-title { display: block; overflow: hidden; color: #f6fcff; font-size: 12px; font-weight: 900; letter-spacing: .075em; text-overflow: ellipsis; white-space: nowrap; }
+            .fas-subtitle { display: block; margin-top: 2px; color: #b9d7e2; font-size: 8px; font-weight: 800; letter-spacing: .06em; }
+            .fas-close { width: 27px; height: 27px; flex: 0 0 auto; padding: 0 0 2px; border: 1px solid #7892a0; border-radius: 2px; background: #293d47; box-shadow: 0 2px 0 #111b20, inset 0 1px 0 rgba(255, 255, 255, .11); color: #d5e7ec; cursor: pointer; font-size: 19px !important; line-height: 18px; }
+            .fas-close:hover { border-color: #f0a43a; background: #624725; color: white; }
+            .fas-note { margin: 9px 10px 0; padding: 7px 8px; border: 1px solid #35505c; border-left: 4px solid var(--fas-orange); border-radius: 2px; background: #15242c; color: #b8cbd1; font-size: 9px; line-height: 1.38; }
+            .fas-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; padding: 9px 10px 0; }
+            .fas-control, .fas-check { box-sizing: border-box; min-width: 0; border: 1px solid #37515d; border-radius: 2px; background: linear-gradient(135deg, #243842, #1b2c35); box-shadow: inset 0 1px 0 rgba(207, 241, 250, .06); }
+            .fas-control { display: flex; flex-direction: column; gap: 5px; min-height: 72px; padding: 8px; }
+            .fas-padding-control { grid-column: 1; }
+            .fas-resolution-control { grid-column: 2; }
+            .fas-label { color: #a9c1ca; font-size: 8px; font-weight: 900; letter-spacing: .085em; text-transform: uppercase; }
+            .fas-control input[type="range"] { width: 100%; height: 17px; margin: 1px 0 0; accent-color: var(--fas-orange); cursor: pointer; }
+            .fas-control output { color: #f4fbfd; font: 900 14px "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: -.02em; }
+            .fas-control small { min-height: 20px; color: #8daab5; font-size: 8px; line-height: 1.26; }
+            .fas-control select { width: 100%; height: 29px; padding: 0 6px; border: 1px solid #537987; border-radius: 2px; outline: none; background: #12212a; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .46); color: #effaff; cursor: pointer; font-size: 11px; font-weight: 850; }
+            .fas-control select:focus { border-color: var(--fas-blue-hi); box-shadow: 0 0 0 1px rgba(113, 220, 250, .26); }
+            .fas-check { display: flex; align-items: center; gap: 7px; min-height: 34px; padding: 7px 8px; color: #d1e1e6; cursor: pointer; font-size: 9px; font-weight: 750; line-height: 1.15; user-select: none; }
+            .fas-check input { width: 14px; height: 14px; flex: 0 0 auto; margin: 0; accent-color: #50bce6; cursor: pointer; }
+            .fas-analysis { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin: 9px 10px 0; padding-top: 8px; border-top: 1px solid #304650; }
+            .fas-analysis > div { position: relative; min-width: 0; padding: 7px 8px 7px 10px; border: 1px solid #304753; border-radius: 2px; background: #14232b; overflow: hidden; }
+            .fas-analysis > div::before { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 3px; background: #4b9fc1; }
+            .fas-analysis span { display: block; color: #9bb5be; font-size: 8px; font-weight: 850; letter-spacing: .055em; }
+            .fas-analysis strong { display: block; margin-top: 3px; overflow: hidden; color: #f3fbfd; font: 800 11px "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
+            .fas-analysis .fas-error { grid-column: 1 / -1; padding: 8px; border: 1px solid #a7504e; border-left: 4px solid #e37b6d; border-radius: 2px; background: #422529; color: #ffe1db; font-size: 10px; line-height: 1.4; }
+            .fas-status { min-height: 18px; margin: 8px 10px 0; color: #a9c7d1; font-size: 9px; font-weight: 650; line-height: 1.4; }
+            .fas-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 8px 10px 10px; }
+            .fas-actions button { position: relative; min-width: 0; min-height: 32px; padding: 0 6px; border: 1px solid #53717e; border-radius: 2px; background: linear-gradient(#3d5964, #2a414b); box-shadow: 0 2px 0 #0b1216, inset 0 1px 0 rgba(243, 255, 255, .12); color: #f0f9fb; cursor: pointer; font-size: 9px; font-weight: 900; letter-spacing: .035em; }
+            .fas-actions button:hover:not(:disabled) { top: -1px; border-color: #9beaff; background: linear-gradient(#4b7180, #31535f); }
+            .fas-actions button:active:not(:disabled) { top: 1px; box-shadow: 0 1px 0 #0b1216, inset 0 1px 0 rgba(0, 0, 0, .26); }
             .fas-actions button:disabled { cursor: default; opacity: .43; }
-            .fas-capture { background: linear-gradient(135deg, rgba(31, 152, 185, .72), rgba(75, 73, 190, .72)) !important; }
-            .fas-cancel { grid-column: 1 / -1; border-color: rgba(255, 140, 158, .4) !important; background: rgba(155, 36, 71, .36) !important; }
+            .fas-select { border-color: #a97431 !important; background: linear-gradient(#7f5a2d, #5d3f20) !important; }
+            .fas-capture { border-color: #69c9ec !important; background: linear-gradient(#28799e, #1e5977) !important; }
+            .fas-cancel { grid-column: 1 / -1; border-color: #bd625d !important; background: linear-gradient(#84423e, #5c2d2d) !important; }
+            @media (max-width: 420px) {
+                .fas-panel { width: calc(100vw - 24px); }
+                .fas-title { font-size: 11px; }
+                .fas-subtitle { letter-spacing: .035em; }
+            }
         `);
     }
 }

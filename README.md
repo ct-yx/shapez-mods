@@ -4,7 +4,7 @@
 
 [![GitHub Pages](https://img.shields.io/badge/展示站-GitHub%20Pages-66c4ff?style=flat-square)](https://ct-yx.github.io/shapez-mods/)
 [![shapez.io](https://img.shields.io/badge/shapez.io-1.x-48edd2?style=flat-square)](https://shapez.io/)
-[![Mods](https://img.shields.io/badge/Mod-9-ad7cff?style=flat-square)](docs/mods/README.md)
+[![Mods](https://img.shields.io/badge/Mod-10-ad7cff?style=flat-square)](docs/mods/README.md)
 
 **[前往项目主页](https://ct-yx.github.io/shapez-mods/)** · **[全部 Mod 介绍](docs/mods/README.md)**
 
@@ -22,6 +22,7 @@
 | 建造 | `key-reform.js` | 使用 T/R + 数字键或滚轮快速切换变形体和朝向。 | [查看](docs/mods/key-reform.md) |
 | 视图 | `zoomout-before-mapmode.js` | 放大进入地图总览前的缩放范围，并简化低缩放时的传送带渲染。 | [查看](docs/mods/zoomout-before-mapmode.md) |
 | 性能 | `factory-stress-lab.js` | 无上限倍率、40 FPS 自适应 Benchmark、性能曲线与报告导出。 | [查看](docs/mods/factory-stress-lab.md) |
+| 视图 / 工具 | `factory-area-screenshot.js` | 以普通镜头分块导出已放置机器范围的高分辨率 PNG，并可设置四边留白。 | [查看](docs/mods/factory-area-snapshot.md) |
 | 建造 | `auto-tunnels@1.0.4.js` | 方向锁定铺传送带时，自动尝试用地下传送带跨越现有物流。 | [查看](docs/mods/auto-tunnels.md) |
 | 建造 | `extractor_chain.js` | 拖动时连续放置链式采矿机，并按路径自动调整朝向。 | [查看](docs/mods/chainable-extractors.md) |
 | 测试 | `sandbox.js` | 解锁全部奖励并将蓝图成本归零，适合验证布局与压力测试。 | [查看](docs/mods/sandbox.md) |
@@ -43,6 +44,7 @@
 | 日常建造 | `balancer-variants.js` + `key-reform.js` |
 | 高吞吐物流测试 | `belt_speed_10x.js` + `balancer-variants.js` + `auto-tunnels@1.0.4.js` |
 | 大地图规划 | `structured-mod-settings.js` + `zoomout-before-mapmode.js` |
+| 工厂布局归档 | `factory-area-screenshot.js`；大型工厂先以 16–32 MP 分析与试导出，再提高图片预算 |
 | 工厂性能压测 | `factory-stress-lab.js`；搭建测试布局时可额外启用 `sandbox.js` |
 | 全套体验 | 设置前置 + 物流 + 平衡器 + 按键 + 地图预览 + 压测工具；按需启用 Sandbox |
 
@@ -68,6 +70,7 @@
 - **Sandbox** 会让所有奖励解锁、蓝图免费；建议使用独立测试存档，避免干扰正常进度。
 - **Auto Tunnels** 和 **Chainable Extractors** 会扩展游戏建造器逻辑；若使用其他同类建造 Mod，建议先在测试存档验证组合效果。
 - 低缩放时的传送带简化渲染仅影响视觉表现，不改变物流模拟。
+- **Factory Area Snapshot** 只读取已放置机器范围并写出本地 PNG；会在截图期间暂时暂停模拟（可关闭），结束后恢复原速度与图层。
 
 ## 报告示例
 

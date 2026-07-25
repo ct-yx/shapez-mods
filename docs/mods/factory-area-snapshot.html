@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="按已放置机器范围加留白，以普通镜头分块渲染导出高分辨率工厂 PNG。">
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+    <title>Factory Area Snapshot · shapez.io Mods</title>
+    <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+    <header class="site-header"><nav class="nav"><a class="brand" href="../index.html"><span class="brand-mark">◇</span>shapez.io Mods</a><div class="nav-links"><a href="../index.html#mods">全部 Mod</a><a href="https://github.com/ct-yx/shapez-mods/blob/main/mods/factory-area-screenshot.js">源码 ↗</a></div></nav></header>
+    <main class="shell">
+        <section class="page-hero"><div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><span>视图 / 工具</span></div><span class="tag purple">视图 / 工具</span><h1>Factory Area Snapshot</h1><p class="lead">自动识别已放置机器的外接区域，加上四边留白后，以普通镜头渲染路径分块拼接为高分辨率 PNG。</p><div class="meta-row"><span class="meta">版本 1.0.0</span><span class="meta">文件 <code>factory-area-screenshot.js</code></span><span class="meta">shapez.io 1.x</span></div></section>
+        <section class="page-layout"><article class="prose">
+            <h2>不是地图总览截图</h2><p>该 Mod 不使用地图总览的剪影样式，也不依赖世界预览框。它以普通镜头的顺序渲染地图背景、传送带物品、建筑前景和 Hub，所以导出效果与游戏中的常规工厂画面一致。</p>
+            <h2>范围与留白</h2><p>截图范围来自普通层中已放置机器的最小外接矩形。默认在上下左右各增加 <strong>4 格</strong>留白，可调整为 0–32 格；这让最外侧建筑不会贴着画面边缘，也能包含边界附近的传送带与地下带出口。</p>
+            <h2>分块渲染与拼接</h2><ul><li>使用约 2048 px 的核心块逐块绘制，期间持续让出浏览器事件循环，界面仍可响应取消操作。</li><li>分块四周额外绘制缓冲边缘，再只拼接核心部分，避免大型建筑和物品跨块时产生接缝或截断。</li><li>默认暂停模拟，确保所有块来自同一时刻；结束、报错或取消时会恢复原先速度与图层。</li><li>左上角独立「截图」按钮展开控制面板，不占用原版物品栏或工具栏。</li></ul>
+            <h2>分辨率和内存保护</h2><ul><li>目标倍率可设为 0.25–2×；1× 为每格 32 px。</li><li>图片预算可选 16–128 MP，默认 64 MP；总像素或单边超过限制时会自动降低实际倍率。</li><li>若要低于 0.25× 才能满足限制，分析阶段会显示提示而不开始高内存渲染。</li><li>可关闭传送带动态物品，优先导出静态、清晰的工厂布局图。</li></ul>
+            <h2>使用流程</h2><ol><li>进入存档后点击左上角「截图」。</li><li>点击「分析范围」，检查机器范围、加留白后的截图范围、输出尺寸与分块数。</li><li>按工厂大小调整留白、渲染倍率与图片预算。</li><li>点击「导出 PNG」；浏览器会下载带时间戳的图片文件。</li></ol>
+            <div class="notice">64 MP 的 RGBA 最终画布约占用 256 MB，PNG 编码与临时分块还会占用额外内存。大型存档建议先以 16–32 MP 验证范围，再提高预算导出最终图。</div>
+            <h2>设置与兼容性</h2><p>左上角面板可独立使用；若同时启用 Structured Mod Settings UI，同样的选项会出现在「设置 → 游戏模组（MODS）」中。Mod 不改变机器、物流或存档数据，且不会改变当前相机位置、缩放或地图总览范围。</p>
+        </article><aside class="aside"><h3>获取方式</h3><p>下载整合包后，将本 Mod 的 JS 文件复制到游戏 Mod 目录。</p><a class="button primary" data-modpack-download href="https://github.com/ct-yx/shapez-mods/releases/tag/modpack-latest"><span data-modpack-label>正在获取最新整合包…</span></a><p class="download-status" data-modpack-status aria-live="polite">正在通过 GitHub API 查询最新发布包…</p><a class="button" href="https://github.com/ct-yx/shapez-mods/blob/main/mods/factory-area-screenshot.js">查看源码 ↗</a><a class="button" href="https://ct-yx.github.io/shapez-mods/">返回展示首页</a></aside></section>
+    </main>
+    <footer class="site-footer"><div class="shell"><span>shapez.io Mods Collection</span><a href="https://www.ifdian.net/a/Ct_yx?utm_source=copylink&amp;utm_medium=link" target="_blank" rel="noreferrer">爱发电赞助 ↗</a><a href="https://buymeacoffee.com/ctyx" target="_blank" rel="noreferrer">Buy Me a Coffee ↗</a><a href="https://github.com/ct-yx/shapez-mods">GitHub Repository ↗</a></div></footer>
+    <script src="../assets/download-latest.js" defer></script>
+</body>
+</html>

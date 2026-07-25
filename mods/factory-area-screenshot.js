@@ -3,9 +3,9 @@ const METADATA = {
     website: "https://github.com/ct-yx/shapez-mods",
     author: "ct-yx & Codex",
     name: "Factory Area Snapshot",
-    version: "1.6.0",
+    version: "1.7.0",
     id: "factory-area-snapshot",
-    description: "Exports high-resolution factory PNGs through aspect-aware GPU-preferred capture partitions.",
+    description: "Exports high-resolution factory PNGs through density-calibrated, GPU-preferred capture partitions.",
     minimumGameVersion: ">=1.5.0",
     doesNotAffectSavegame: true,
     settings: {
@@ -38,8 +38,13 @@ const STREAMING_STRIPE_HEIGHT_PX = 512;
 // Both the tile row cache and the PNG scanline buffer exist briefly. Bound the
 // row itself so very wide streamed images remain responsive and memory stable.
 const STREAMING_STRIPE_MAX_MEGAPIXELS = 4;
-const MIN_CAPTURE_GRID_CELLS = 25;
-const MAX_CAPTURE_GRID_CELLS = 64;
+// This density was calibrated from a verified prior 256 MP export of this
+// factory. Thirty regular-camera regions at that reference size keep the same
+// visual workload as the older, clear 256 MP capture flow.
+const BASELINE_CAPTURE_MEGAPIXELS = 256;
+const BASELINE_CAPTURE_PARTITIONS = 30;
+const MIN_CAPTURE_GRID_CELLS = 1;
+const MAX_CAPTURE_GRID_CELLS = 1024;
 // Above this zoom, shapez uses the same sprite-atlas tier and only filters it.
 // Render a crisp native source, then let the GPU scale it during final composition.
 const MAX_SHARP_SOURCE_SCALE = 1;
@@ -71,8 +76,9 @@ const STRINGS = {
         scaleResult: "Output render scale",
         sourceScale: "Crisp source / output",
         chunks: "Capture partitions",
+        partitionTarget: "target {count}",
         waiting: "Analyze the placed factory area before exporting.",
-        ready: "Ready. Rendering uses 25–64 aspect-aware capture partitions.",
+        ready: "Ready. Rendering uses density-calibrated, aspect-aware capture partitions.",
         selectionArmed: "Map selection is armed. Zoom into Map Overview, then left-drag a rectangle.",
         selectionRequiresMap: "Zoom out until Map Overview is active, then left-drag a rectangle.",
         selectionReady: "Selected map area: {w} × {h} tiles. It will export exactly as selected, without outer padding.",
@@ -88,7 +94,7 @@ const STRINGS = {
         unavailable: "Enter a running game to use the snapshot tool.",
         layerNote: "The PNG always uses the regular factory render; Map Overview is only used to choose an area.",
         settingsTitle: "Factory Area Snapshot",
-        settingsDescription: "Exports the bounds of placed machines with a configurable safety margin. High resolutions use aspect-aware capture partitions and a GPU-preferred canvas pipeline.",
+        settingsDescription: "Exports the bounds of placed machines with a configurable safety margin. Capture partitions are calibrated from the 256 MP reference density and use a GPU-preferred canvas pipeline.",
         settingPadding: "Outer padding",
         settingResolution: "Target output resolution",
         settingCrispSampling: "Crisp pixel sampling",
@@ -121,8 +127,9 @@ const STRINGS = {
         scaleResult: "最终渲染倍率",
         sourceScale: "清晰源 / 最终倍率",
         chunks: "分区捕获",
+        partitionTarget: "目标 {count}",
         waiting: "先分析已放置机器的范围，再导出截图。",
-        ready: "已就绪。截图将按长宽比分为 25–64 个分区进行渲染与拼接。",
+        ready: "已就绪。截图将按 256 MP 基准密度和长宽比划分分区进行渲染与拼接。",
         selectionArmed: "选区已准备：缩小进入地图总览后，用左键拖拽一个矩形范围。",
         selectionRequiresMap: "请先缩小进入地图总览，再用左键拖拽选择区域。",
         selectionReady: "已选中地图区域：{w} × {h} 格。将严格按拖拽范围导出，不添加外围留白。",
@@ -138,7 +145,7 @@ const STRINGS = {
         unavailable: "进入正在运行的存档后才能使用截图工具。",
         layerNote: "PNG 始终按普通工厂层渲染；地图总览只用于框选截图区域。",
         settingsTitle: "工厂区域截图",
-        settingsDescription: "以已放置机器的边界加上可配置留白导出 PNG；高分辨率使用按长宽比划分的分区和 GPU 偏好的 Canvas 渲染流程。",
+        settingsDescription: "以已放置机器的边界加上可配置留白导出 PNG；分区数量按 256 MP 基准密度计算，并使用 GPU 偏好的 Canvas 渲染流程。",
         settingPadding: "外围留白",
         settingResolution: "目标输出分辨率",
         settingCrispSampling: "清晰像素采样",
@@ -551,7 +558,7 @@ class Mod extends shapez.Mod {
             <div><span>${this.escapeHtml(this.t("output"))}</span><strong>${output.widthPx.toLocaleString()} × ${output.heightPx.toLocaleString()}</strong></div>
             <div><span>${this.escapeHtml(this.t("scaleResult"))}</span><strong>${this.formatScale(output.effectiveScale)}x · ${this.formatMegapixels(output.megapixels)} MP</strong></div>
             <div><span>${this.escapeHtml(this.t("sourceScale"))}</span><strong>${this.formatScale(output.sourceScale)}x → ${this.formatScale(output.effectiveScale)}x</strong></div>
-            <div><span>${this.escapeHtml(this.t("chunks"))}</span><strong>${output.captureGrid.columns} × ${output.captureGrid.rows} = ${output.captureGrid.count}</strong></div>`;
+            <div><span>${this.escapeHtml(this.t("chunks"))}</span><strong>${output.captureGrid.columns} × ${output.captureGrid.rows} = ${output.captureGrid.count} · ${this.escapeHtml(this.t("partitionTarget", { count: output.captureGrid.preferred }))}</strong></div>`;
     }
 
     escapeHtml(value) {
@@ -690,31 +697,43 @@ class Mod extends shapez.Mod {
 
 
     getCaptureGridRange(megapixels) {
-        // The preferred counts are square numbers for balanced maps. The small
-        // range below each next tier is deliberately available for wide/tall
-        // factories, so a 2:1 map can use e.g. 7 × 4 instead of a misleading
-        // 5 × 5 grid while staying inside the promised 25–64 partitions.
-        if (megapixels >= 768) return { min: 49, max: 64, preferred: 64 };
-        if (megapixels >= 384) return { min: 49, max: 63, preferred: 49 };
-        if (megapixels >= 128) return { min: 36, max: 48, preferred: 36 };
-        return { min: 25, max: 35, preferred: 25 };
+        // Keep the same capture density as the old 256 MP image split into
+        // about 30 regions. This makes the requested quality scale linearly:
+        // 256 MP -> about 30 partitions; 1024 MP -> about 120. A small window
+        // around the ideal count lets wide/tall factories choose a useful grid.
+        const preferred = Math.min(
+            MAX_CAPTURE_GRID_CELLS,
+            Math.max(1, Math.ceil(Math.max(1, megapixels) * BASELINE_CAPTURE_PARTITIONS / BASELINE_CAPTURE_MEGAPIXELS))
+        );
+        const tolerance = Math.max(1, Math.ceil(preferred * 0.15));
+        return {
+            min: Math.max(MIN_CAPTURE_GRID_CELLS, preferred - tolerance),
+            max: Math.min(MAX_CAPTURE_GRID_CELLS, preferred + tolerance),
+            preferred,
+        };
     }
 
     createCaptureGrid(widthPx, heightPx, megapixels) {
         const range = this.getCaptureGridRange(megapixels);
         const aspect = Math.max(0.01, widthPx / Math.max(1, heightPx));
         let best = null;
-        for (let columns = 1; columns <= MAX_CAPTURE_GRID_CELLS; columns++) {
-            for (let rows = 1; rows <= MAX_CAPTURE_GRID_CELLS; rows++) {
-                const count = columns * rows;
-                if (count < Math.max(MIN_CAPTURE_GRID_CELLS, range.min) || count > Math.min(MAX_CAPTURE_GRID_CELLS, range.max)) continue;
-                const ratioPenalty = Math.abs(Math.log((columns / rows) / aspect));
-                const densityPenalty = Math.abs(count - range.preferred) / range.preferred * 0.35;
-                const score = ratioPenalty + densityPenalty;
-                if (!best || score < best.score) best = { columns, rows, count, score };
+        const consider = (columns, rows, count) => {
+            const ratioPenalty = Math.abs(Math.log((columns / rows) / aspect));
+            const densityPenalty = Math.abs(count - range.preferred) / range.preferred * 2;
+            const score = ratioPenalty + densityPenalty;
+            if (!best || score < best.score) best = { columns, rows, count, score, preferred: range.preferred };
+        };
+        // Enumerate only the factor pairs instead of a 1024 × 1024 brute-force
+        // scan. The hard 1024-partition cap therefore has negligible UI cost.
+        for (let count = range.min; count <= range.max; count++) {
+            for (let rows = 1; rows * rows <= count; rows++) {
+                if (count % rows !== 0) continue;
+                const columns = count / rows;
+                consider(columns, rows, count);
+                if (columns !== rows) consider(rows, columns, count);
             }
         }
-        return best || { columns: 5, rows: 5, count: 25, score: 0 };
+        return best || { columns: 1, rows: 1, count: 1, score: 0, preferred: 1 };
     }
 
     getGridBoundary(size, index, count) {

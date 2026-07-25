@@ -3,9 +3,9 @@ const METADATA = {
     website: "https://github.com/ct-yx/shapez-mods",
     author: "ct-yx & Codex",
     name: "Factory Area Snapshot",
-    version: "1.0.0",
+    version: "1.1.0",
     id: "factory-area-snapshot",
-    description: "Exports a tiled, high-resolution PNG of the placed factory area with configurable padding.",
+    description: "Exports high-resolution tiled PNGs of the factory or a map-overview selection.",
     minimumGameVersion: ">=1.5.0",
     doesNotAffectSavegame: true,
     settings: {
@@ -27,7 +27,7 @@ const MIN_RENDER_SCALE = 0.25;
 const MAX_RENDER_SCALE = 2;
 const DEFAULT_MAX_MEGAPIXELS = 64;
 const MIN_MAX_MEGAPIXELS = 16;
-const MAX_MAX_MEGAPIXELS = 128;
+const MAX_MAX_MEGAPIXELS = 256;
 const MAX_CANVAS_EDGE = 16384;
 const TILE_CORE_TARGET_PX = 2048;
 const TILE_BLEED_PX = 48;
@@ -46,25 +46,32 @@ const STRINGS = {
         budget: "Image budget",
         items: "Include belt items",
         pause: "Pause simulation while rendering",
-        inspect: "ANALYZE AREA",
+        inspect: "FACTORY AREA",
+        selectArea: "SELECT MAP AREA",
         capture: "EXPORT PNG",
         cancel: "CANCEL",
         noFactory: "No placed machines were detected in the regular layer.",
         machineArea: "Machines",
+        selectedArea: "Map selection",
         exportArea: "Export area",
         output: "Output",
         scaleResult: "Effective scale",
         chunks: "Tiles",
         waiting: "Analyze the placed factory area before exporting.",
         ready: "Ready. Rendering is split into tiles to keep the UI responsive.",
+        selectionArmed: "Map selection is armed. Zoom into Map Overview, then left-drag a rectangle.",
+        selectionRequiresMap: "Zoom out until Map Overview is active, then left-drag a rectangle.",
+        selectionReady: "Selected map area: {w} × {h} tiles. It will export exactly as selected, without outer padding.",
+        selectionCancelled: "Map-area selection cancelled.",
+        selectionExact: "Map selections export the exact dragged rectangle; outer padding applies to factory-area mode only.",
         rendering: "Rendering tile {current}/{total} · {percent}%",
         encoding: "Encoding PNG…",
         done: "PNG download started.",
         cancelled: "Capture cancelled.",
-        tooLarge: "This factory needs {needed}x or lower to stay within the image limit. Lower the render scale, reduce padding, or choose a larger image budget.",
+        tooLarge: "This export area needs {needed}x or lower to stay within the image limit. Lower the render scale, reduce padding, or choose a larger image budget.",
         allocationFailed: "The browser could not allocate this image. Try a smaller image budget or render scale.",
         unavailable: "Enter a running game to use the snapshot tool.",
-        layerNote: "Always exports the regular factory layer; map overview is not used.",
+        layerNote: "The PNG always uses the regular factory render; Map Overview is only used to choose an area.",
         settingsTitle: "Factory Area Snapshot",
         settingsDescription: "Exports the bounds of placed machines with a configurable safety margin. The export uses regular-camera rendering in tiles.",
         settingPadding: "Outer padding",
@@ -85,25 +92,32 @@ const STRINGS = {
         budget: "图片预算",
         items: "包含传送带上的物品",
         pause: "渲染期间暂停模拟",
-        inspect: "分析范围",
+        inspect: "机器范围",
+        selectArea: "选择地图区域",
         capture: "导出 PNG",
         cancel: "取消",
         noFactory: "未在普通层检测到已放置的机器。",
         machineArea: "机器范围",
+        selectedArea: "地图选区",
         exportArea: "截图范围",
         output: "输出尺寸",
         scaleResult: "实际倍率",
         chunks: "分块数量",
         waiting: "先分析已放置机器的范围，再导出截图。",
         ready: "已就绪。截图会分块渲染与拼接，避免长时间卡住界面。",
+        selectionArmed: "选区已准备：缩小进入地图总览后，用左键拖拽一个矩形范围。",
+        selectionRequiresMap: "请先缩小进入地图总览，再用左键拖拽选择区域。",
+        selectionReady: "已选中地图区域：{w} × {h} 格。将严格按拖拽范围导出，不添加外围留白。",
+        selectionCancelled: "已取消地图区域选择。",
+        selectionExact: "地图选区会严格按拖拽矩形导出；外围留白仅用于机器范围模式。",
         rendering: "正在渲染第 {current}/{total} 块 · {percent}%",
         encoding: "正在编码 PNG…",
         done: "已开始下载 PNG。",
         cancelled: "已取消截图。",
-        tooLarge: "此工厂需要降到 {needed}x 或更低才能符合图片限制。请降低渲染倍率、减少留白，或提高图片预算。",
+        tooLarge: "该截图范围需要降到 {needed}x 或更低才能符合图片限制。请降低渲染倍率、减少留白，或提高图片预算。",
         allocationFailed: "浏览器无法分配这张图片所需的内存。请降低图片预算或渲染倍率。",
         unavailable: "进入正在运行的存档后才能使用截图工具。",
-        layerNote: "始终导出普通工厂层，不使用地图总览视角。",
+        layerNote: "PNG 始终按普通工厂层渲染；地图总览只用于框选截图区域。",
         settingsTitle: "工厂区域截图",
         settingsDescription: "以已放置机器的边界加上可配置留白导出 PNG；使用普通镜头渲染路径并分块拼接。",
         settingPadding: "外围留白",
@@ -130,6 +144,16 @@ class Mod extends shapez.Mod {
         this.panelOpen = false;
         this.lastAnalysis = null;
         this.capture = null;
+        this.captureMode = "factory";
+        this.selectedArea = null;
+        this.selection = {
+            armed: false,
+            dragging: false,
+            root: null,
+            startWorld: null,
+            currentWorld: null,
+        };
+        this.statusMessage = "";
 
         this.settings.paddingTiles = this.normalizePadding(this.settings.paddingTiles);
         this.settings.renderScale = this.normalizeRenderScale(this.settings.renderScale);
@@ -139,13 +163,16 @@ class Mod extends shapez.Mod {
 
         this.registerCss();
         this.registerSettingsWhenAvailable();
+        this.signals.gameStarted.add(root => this.installMapAreaSelection(root), this);
         this.signals.stateEntered.add(state => {
             if (state && state.key === "InGameState") {
                 this.currentGameState = state;
                 this.registerSettingsWhenAvailable();
+                this.installMapAreaSelection(this.getGameRoot());
                 this.buildUI();
             } else {
                 this.cancelCapture();
+                this.cancelMapAreaSelection(true);
                 this.currentGameState = null;
                 this.destroyUI();
             }
@@ -265,8 +292,8 @@ class Mod extends shapez.Mod {
                     type: "number",
                     label: { en: STRINGS.en.settingBudget, zh: STRINGS.zh.settingBudget },
                     description: {
-                        en: "Hard PNG canvas budget, 16–128 MP. Larger images need considerably more browser memory.",
-                        zh: "PNG 画布硬预算，范围 16–128 MP。数值越大，浏览器内存占用也会明显增加。",
+                        en: "Hard PNG canvas budget, 16–256 MP. Larger images need considerably more browser memory.",
+                        zh: "PNG 画布硬预算，范围 16–256 MP。数值越大，浏览器内存占用也会明显增加。",
                     },
                     min: MIN_MAX_MEGAPIXELS,
                     max: MAX_MAX_MEGAPIXELS,
@@ -315,7 +342,8 @@ class Mod extends shapez.Mod {
         else if (key === "pauseDuringCapture") this.settings.pauseDuringCapture = Boolean(value);
         try { this.saveSettings(); } catch (error) { }
         this.lastAnalysis = null;
-        this.updateUI();
+        if (this.getGameRoot()) this.analyzeArea(true);
+        else this.updateUI();
     }
 
     getSetting(key) {
@@ -374,7 +402,7 @@ class Mod extends shapez.Mod {
                 <div class="fas-controls">
                     <label class="fas-control"><span class="fas-label padding-label"></span><input class="fas-padding" type="range" min="0" max="32" step="1"><output class="fas-padding-value"></output><small class="fas-padding-hint"></small></label>
                     <label class="fas-control"><span class="fas-label scale-label"></span><select class="fas-scale"><option value="0.25">0.25x</option><option value="0.5">0.5x</option><option value="0.75">0.75x</option><option value="1">1x</option><option value="1.5">1.5x</option><option value="2">2x</option></select></label>
-                    <label class="fas-control"><span class="fas-label budget-label"></span><select class="fas-budget"><option value="16">16 MP</option><option value="32">32 MP</option><option value="48">48 MP</option><option value="64">64 MP</option><option value="96">96 MP</option><option value="128">128 MP</option></select></label>
+                    <label class="fas-control"><span class="fas-label budget-label"></span><select class="fas-budget"><option value="16">16 MP</option><option value="32">32 MP</option><option value="48">48 MP</option><option value="64">64 MP</option><option value="96">96 MP</option><option value="128">128 MP</option><option value="192">192 MP</option><option value="256">256 MP</option></select></label>
                     <label class="fas-check"><input class="fas-items" type="checkbox"><span class="fas-items-text"></span></label>
                     <label class="fas-check"><input class="fas-pause" type="checkbox"><span class="fas-pause-text"></span></label>
                 </div>
@@ -382,6 +410,7 @@ class Mod extends shapez.Mod {
                 <div class="fas-status" aria-live="polite"></div>
                 <footer class="fas-actions">
                     <button type="button" class="fas-analyze"></button>
+                    <button type="button" class="fas-select"></button>
                     <button type="button" class="fas-capture" disabled></button>
                     <button type="button" class="fas-cancel" hidden></button>
                 </footer>
@@ -406,9 +435,15 @@ class Mod extends shapez.Mod {
             analysis: container.querySelector(".fas-analysis"),
             status: container.querySelector(".fas-status"),
             analyze: container.querySelector(".fas-analyze"),
+            select: container.querySelector(".fas-select"),
             capture: container.querySelector(".fas-capture"),
             cancel: container.querySelector(".fas-cancel"),
         };
+        const selectionOverlay = document.createElement("div");
+        selectionOverlay.id = "factory-area-snapshot-selection";
+        selectionOverlay.hidden = true;
+        document.body.appendChild(selectionOverlay);
+        this.elements.selectionOverlay = selectionOverlay;
 
         this.elements.launcher.addEventListener("click", () => this.togglePanel());
         this.elements.close.addEventListener("click", () => this.setPanelOpen(false));
@@ -417,14 +452,18 @@ class Mod extends shapez.Mod {
         this.elements.budget.addEventListener("change", () => this.setSetting("maxMegapixels", this.elements.budget.value));
         this.elements.items.addEventListener("change", () => this.setSetting("includeMovingItems", this.elements.items.checked));
         this.elements.pause.addEventListener("change", () => this.setSetting("pauseDuringCapture", this.elements.pause.checked));
-        this.elements.analyze.addEventListener("click", () => this.analyzeArea());
+        this.elements.analyze.addEventListener("click", () => this.analyzeFactoryArea());
+        this.elements.select.addEventListener("click", () => this.beginMapAreaSelection());
         this.elements.capture.addEventListener("click", () => this.startCapture());
-        this.elements.cancel.addEventListener("click", () => this.cancelCapture());
+        this.elements.cancel.addEventListener("click", () => this.cancelOperation());
 
         this.updateUI();
     }
 
     destroyUI() {
+        if (this.elements && this.elements.selectionOverlay && this.elements.selectionOverlay.remove) {
+            this.elements.selectionOverlay.remove();
+        }
         if (this.elements && this.elements.container && this.elements.container.remove) this.elements.container.remove();
         this.elements = {};
     }
@@ -443,6 +482,7 @@ class Mod extends shapez.Mod {
         const e = this.elements;
         if (!e || !e.container) return;
         const active = Boolean(this.capture && this.capture.active);
+        const selecting = Boolean(this.selection && this.selection.armed);
         const analysis = this.lastAnalysis;
         e.launcher.textContent = this.t("launcher");
         e.launcher.title = this.t("open");
@@ -455,27 +495,35 @@ class Mod extends shapez.Mod {
         e.container.querySelector(".padding-label").textContent = this.t("padding");
         e.container.querySelector(".scale-label").textContent = this.t("scale");
         e.container.querySelector(".budget-label").textContent = this.t("budget");
-        e.paddingHint.textContent = this.t("paddingHint");
+        const selectedMode = Boolean((analysis && analysis.source === "selection") || this.captureMode === "selection");
+        e.paddingHint.textContent = selectedMode ? this.t("selectionExact") : this.t("paddingHint");
         e.padding.value = String(this.getPaddingTiles());
+        e.padding.disabled = selectedMode || active;
         e.paddingValue.textContent = this.getPaddingTiles() + " tiles";
         e.scale.value = String(this.getRenderScale());
+        e.scale.disabled = active;
         e.budget.value = String(this.getMaxMegapixels());
+        e.budget.disabled = active;
         e.items.checked = this.getIncludeMovingItems();
+        e.items.disabled = active;
         e.pause.checked = this.getPauseDuringCapture();
+        e.pause.disabled = active;
         e.container.querySelector(".fas-items-text").textContent = this.t("items");
         e.container.querySelector(".fas-pause-text").textContent = this.t("pause");
         e.analyze.textContent = this.t("inspect");
+        e.select.textContent = this.t("selectArea");
         e.capture.textContent = this.t("capture");
         e.cancel.textContent = this.t("cancel");
         e.analyze.disabled = active;
+        e.select.disabled = active;
         e.capture.disabled = active || !analysis || Boolean(analysis.error);
-        e.cancel.hidden = !active;
+        e.cancel.hidden = !active && !selecting;
         if (active) {
             e.analysis.innerHTML = this.renderAnalysis(this.capture.plan || analysis);
             e.status.textContent = statusOverride || this.capture.status || "";
         } else {
             e.analysis.innerHTML = this.renderAnalysis(analysis);
-            e.status.textContent = statusOverride || (analysis ? (analysis.error || this.t("ready")) : this.t("waiting"));
+            e.status.textContent = statusOverride || this.statusMessage || (analysis ? (analysis.error || this.t("ready")) : this.t("waiting"));
         }
     }
 
@@ -486,7 +534,7 @@ class Mod extends shapez.Mod {
         const output = analysis.output;
         const area = analysis.bounds;
         return `
-            <div><span>${this.escapeHtml(this.t("machineArea"))}</span><strong>${machine.w} × ${machine.h}</strong></div>
+            <div><span>${this.escapeHtml(analysis.source === "selection" ? this.t("selectedArea") : this.t("machineArea"))}</span><strong>${machine.w} × ${machine.h}</strong></div>
             <div><span>${this.escapeHtml(this.t("exportArea"))}</span><strong>${area.w} × ${area.h}</strong></div>
             <div><span>${this.escapeHtml(this.t("output"))}</span><strong>${output.widthPx.toLocaleString()} × ${output.heightPx.toLocaleString()}</strong></div>
             <div><span>${this.escapeHtml(this.t("scaleResult"))}</span><strong>${this.formatScale(output.effectiveScale)}x · ${this.formatMegapixels(output.megapixels)} MP</strong></div>
@@ -554,7 +602,8 @@ class Mod extends shapez.Mod {
     }
 
     calculateRenderPlan(machineBounds, options) {
-        const padding = this.normalizePadding(options && options.paddingTiles);
+        const usePadding = !options || options.usePadding !== false;
+        const padding = usePadding ? this.normalizePadding(options && options.paddingTiles) : 0;
         const requestedScale = this.normalizeRenderScale(options && options.renderScale);
         const maxMegapixels = this.normalizeMegapixels(options && options.maxMegapixels);
         const bounds = {
@@ -578,6 +627,7 @@ class Mod extends shapez.Mod {
                 error: this.t("tooLarge", { needed: this.formatScale(effectiveScale) }),
                 machineBounds,
                 bounds,
+                source: options && options.source === "selection" ? "selection" : "factory",
                 output: null,
             };
         }
@@ -594,6 +644,7 @@ class Mod extends shapez.Mod {
             machineBounds,
             bounds,
             padding,
+            source: options && options.source === "selection" ? "selection" : "factory",
             requestedScale,
             output: {
                 effectiveScale,
@@ -613,12 +664,15 @@ class Mod extends shapez.Mod {
         const root = this.getGameRoot();
         if (!root) {
             this.lastAnalysis = { error: this.t("unavailable") };
+            this.statusMessage = this.lastAnalysis.error;
             this.updateUI();
             return this.lastAnalysis;
         }
-        const machineBounds = this.computeMachineBounds(root);
+        const useSelection = this.captureMode === "selection" && this.selectedArea;
+        const machineBounds = useSelection ? this.selectedArea : this.computeMachineBounds(root);
         if (!machineBounds) {
             this.lastAnalysis = { error: this.t("noFactory") };
+            this.statusMessage = this.lastAnalysis.error;
             this.updateUI();
             return this.lastAnalysis;
         }
@@ -626,9 +680,197 @@ class Mod extends shapez.Mod {
             paddingTiles: this.getPaddingTiles(),
             renderScale: this.getRenderScale(),
             maxMegapixels: this.getMaxMegapixels(),
+            usePadding: !useSelection,
+            source: useSelection ? "selection" : "factory",
         });
+        if (!this.lastAnalysis.error) {
+            this.statusMessage = useSelection
+                ? this.t("selectionReady", { w: machineBounds.w, h: machineBounds.h })
+                : this.t("ready");
+        }
         if (!silent || this.panelOpen) this.updateUI();
         return this.lastAnalysis;
+    }
+
+    analyzeFactoryArea() {
+        this.captureMode = "factory";
+        this.selectedArea = null;
+        this.cancelMapAreaSelection(true);
+        return this.analyzeArea();
+    }
+
+    installMapAreaSelection(root) {
+        if (!root || !root.camera || root.__factoryAreaSnapshotSelector) return;
+        const selector = {
+            down: (position, button) => this.onMapSelectionDown(root, position, button),
+            move: position => this.onMapSelectionMove(root, position),
+            up: position => this.onMapSelectionUp(root, position),
+        };
+        root.__factoryAreaSnapshotSelector = selector;
+        try {
+            root.camera.downPreHandler.add(selector.down, this);
+            root.camera.movePreHandler.add(selector.move, this);
+            root.camera.upPostHandler.add(selector.up, this);
+        } catch (error) {
+            console.warn("Factory Area Snapshot: map-area selector could not be attached", error);
+        }
+        if (root.signals && root.signals.aboutToDestruct) {
+            root.signals.aboutToDestruct.add(() => {
+                if (this.selection && this.selection.root === root) this.cancelMapAreaSelection(true);
+            }, this);
+        }
+    }
+
+    beginMapAreaSelection() {
+        if (this.capture && this.capture.active) return;
+        const root = this.getGameRoot();
+        if (!root || !root.camera) {
+            this.statusMessage = this.t("unavailable");
+            this.updateUI();
+            return;
+        }
+        this.installMapAreaSelection(root);
+        this.selection.armed = true;
+        this.selection.dragging = false;
+        this.selection.root = root;
+        this.selection.startWorld = null;
+        this.selection.currentWorld = null;
+        this.statusMessage = this.t("selectionArmed");
+        this.updateSelectionOverlay();
+        this.updateUI();
+    }
+
+    cancelMapAreaSelection(silent) {
+        if (!this.selection) return;
+        const wasSelecting = this.selection.armed || this.selection.dragging;
+        this.selection.armed = false;
+        this.selection.dragging = false;
+        this.selection.root = null;
+        this.selection.startWorld = null;
+        this.selection.currentWorld = null;
+        this.updateSelectionOverlay();
+        if (wasSelecting && !silent) this.statusMessage = this.t("selectionCancelled");
+        if (!silent) this.updateUI();
+    }
+
+    cancelOperation() {
+        if (this.capture && this.capture.active) this.cancelCapture();
+        else this.cancelMapAreaSelection();
+    }
+
+    getScreenWorldPosition(root, position) {
+        if (!root || !root.camera || !position) return null;
+        try {
+            const world = root.camera.screenToWorld(position);
+            if (world && Number.isFinite(world.x) && Number.isFinite(world.y)) return { x: world.x, y: world.y };
+        } catch (error) { }
+        const camera = root.camera;
+        const zoom = Number(camera.zoomLevel) || 1;
+        const center = camera.center || { x: 0, y: 0 };
+        return {
+            x: (Number(position.x) - Number(root.gameWidth || 0) / 2) / zoom + Number(center.x || 0),
+            y: (Number(position.y) - Number(root.gameHeight || 0) / 2) / zoom + Number(center.y || 0),
+        };
+    }
+
+    getSelectedTileBounds(startWorld, endWorld) {
+        if (!startWorld || !endWorld) return null;
+        const startX = Math.floor(startWorld.x / TILE_SIZE);
+        const startY = Math.floor(startWorld.y / TILE_SIZE);
+        const endX = Math.floor(endWorld.x / TILE_SIZE);
+        const endY = Math.floor(endWorld.y / TILE_SIZE);
+        const x = Math.min(startX, endX);
+        const y = Math.min(startY, endY);
+        return {
+            x,
+            y,
+            w: Math.abs(endX - startX) + 1,
+            h: Math.abs(endY - startY) + 1,
+            count: 0,
+        };
+    }
+
+    onMapSelectionDown(root, position, button) {
+        if (!this.selection || !this.selection.armed || this.selection.root !== root || button !== "left") return;
+        if (!root.camera || !root.camera.getIsMapOverlayActive || !root.camera.getIsMapOverlayActive()) {
+            this.statusMessage = this.t("selectionRequiresMap");
+            this.updateUI();
+            return shapez.STOP_PROPAGATION;
+        }
+        const world = this.getScreenWorldPosition(root, position);
+        if (!world) return shapez.STOP_PROPAGATION;
+        this.selection.dragging = true;
+        this.selection.startWorld = world;
+        this.selection.currentWorld = world;
+        this.updateSelectionOverlay();
+        return shapez.STOP_PROPAGATION;
+    }
+
+    onMapSelectionMove(root, position) {
+        if (!this.selection || !this.selection.dragging || this.selection.root !== root) return;
+        const world = this.getScreenWorldPosition(root, position);
+        if (world) {
+            this.selection.currentWorld = world;
+            this.updateSelectionOverlay();
+        }
+        return shapez.STOP_PROPAGATION;
+    }
+
+    onMapSelectionUp(root, position) {
+        if (!this.selection || !this.selection.dragging || this.selection.root !== root) return;
+        const world = this.getScreenWorldPosition(root, position);
+        if (world) this.selection.currentWorld = world;
+        const bounds = this.getSelectedTileBounds(this.selection.startWorld, this.selection.currentWorld);
+        this.selection.armed = false;
+        this.selection.dragging = false;
+        this.selection.startWorld = null;
+        this.selection.currentWorld = null;
+        this.updateSelectionOverlay();
+        if (!bounds) {
+            this.statusMessage = this.t("selectionCancelled");
+            this.updateUI();
+            return;
+        }
+        this.selectedArea = bounds;
+        this.captureMode = "selection";
+        this.analyzeArea();
+    }
+
+    getWorldScreenPosition(root, world) {
+        if (!root || !root.camera || !world) return null;
+        const camera = root.camera;
+        try {
+            if (shapez.Vector && typeof camera.worldToScreen === "function") {
+                const screen = camera.worldToScreen(new shapez.Vector(world.x, world.y));
+                if (screen && Number.isFinite(screen.x) && Number.isFinite(screen.y)) return { x: screen.x, y: screen.y };
+            }
+        } catch (error) { }
+        const zoom = Number(camera.zoomLevel) || 1;
+        const center = camera.center || { x: 0, y: 0 };
+        return {
+            x: (world.x - Number(center.x || 0)) * zoom + Number(root.gameWidth || 0) / 2,
+            y: (world.y - Number(center.y || 0)) * zoom + Number(root.gameHeight || 0) / 2,
+        };
+    }
+
+    updateSelectionOverlay() {
+        const overlay = this.elements && this.elements.selectionOverlay;
+        const selection = this.selection;
+        if (!overlay || !selection || !selection.dragging || !selection.root || !selection.startWorld || !selection.currentWorld) {
+            if (overlay) overlay.hidden = true;
+            return;
+        }
+        const start = this.getWorldScreenPosition(selection.root, selection.startWorld);
+        const current = this.getWorldScreenPosition(selection.root, selection.currentWorld);
+        if (!start || !current) {
+            overlay.hidden = true;
+            return;
+        }
+        overlay.hidden = false;
+        overlay.style.left = Math.min(start.x, current.x) + "px";
+        overlay.style.top = Math.min(start.y, current.y) + "px";
+        overlay.style.width = Math.max(1, Math.abs(current.x - start.x)) + "px";
+        overlay.style.height = Math.max(1, Math.abs(current.y - start.y)) + "px";
     }
 
     createVisibleRect(x, y, w, h) {
@@ -873,7 +1115,10 @@ class Mod extends shapez.Mod {
             this.updateUI();
             const blob = await this.createPngBlob(finalCanvas);
             if (capture.cancelled) throw new CaptureCancelledError();
-            this.downloadBlob(blob, "factory-area-snapshot-" + this.getFileStamp() + ".png");
+            this.downloadBlob(
+                blob,
+                "factory-area-snapshot-" + (plan.source === "selection" ? "region-" : "factory-") + this.getFileStamp() + ".png"
+            );
             capture.status = this.t("done");
             this.updateUI(capture.status);
         } catch (error) {
@@ -918,6 +1163,16 @@ class Mod extends shapez.Mod {
             #factory-area-snapshot-root button,
             #factory-area-snapshot-root input,
             #factory-area-snapshot-root select { pointer-events: auto; font: inherit; }
+            #factory-area-snapshot-selection {
+                position: fixed;
+                z-index: 10019;
+                box-sizing: border-box;
+                border: 2px solid rgba(110, 231, 255, .96);
+                border-radius: 2px;
+                background: rgba(55, 177, 255, .17);
+                box-shadow: 0 0 0 1px rgba(10, 30, 70, .72), 0 0 22px rgba(87, 218, 255, .48), inset 0 0 18px rgba(82, 218, 255, .13);
+                pointer-events: none;
+            }
             .fas-launcher {
                 min-width: 80px;
                 height: 32px;
@@ -970,12 +1225,12 @@ class Mod extends shapez.Mod {
             .fas-analysis strong { display: block; margin-top: 3px; overflow: hidden; color: #f0f8ff; font: 750 11px ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
             .fas-analysis .fas-error { grid-column: 1 / -1; padding: 8px; border: 1px solid rgba(255, 111, 130, .35); border-radius: 8px; background: rgba(125, 22, 49, .23); color: #ffd3dc; font-size: 10px; line-height: 1.4; }
             .fas-status { min-height: 16px; margin-top: 8px; color: #9bc8ee; font-size: 9px; line-height: 1.35; }
-            .fas-actions { display: flex; gap: 6px; margin-top: 8px; }
-            .fas-actions button { flex: 1; min-width: 0; min-height: 29px; padding: 0 7px; border: 1px solid rgba(131, 215, 255, .29); border-radius: 7px; background: rgba(72, 118, 187, .2); color: #e9f7ff; cursor: pointer; font-size: 9px; font-weight: 850; letter-spacing: .04em; }
+            .fas-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 8px; }
+            .fas-actions button { min-width: 0; min-height: 29px; padding: 0 7px; border: 1px solid rgba(131, 215, 255, .29); border-radius: 7px; background: rgba(72, 118, 187, .2); color: #e9f7ff; cursor: pointer; font-size: 9px; font-weight: 850; letter-spacing: .04em; }
             .fas-actions button:hover:not(:disabled) { border-color: #75e0ff; background: rgba(57, 146, 213, .46); }
             .fas-actions button:disabled { cursor: default; opacity: .43; }
             .fas-capture { background: linear-gradient(135deg, rgba(31, 152, 185, .72), rgba(75, 73, 190, .72)) !important; }
-            .fas-cancel { border-color: rgba(255, 140, 158, .4) !important; background: rgba(155, 36, 71, .36) !important; }
+            .fas-cancel { grid-column: 1 / -1; border-color: rgba(255, 140, 158, .4) !important; background: rgba(155, 36, 71, .36) !important; }
         `);
     }
 }

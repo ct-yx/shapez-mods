@@ -26,7 +26,7 @@
 
 如果这些 Mod 对你的工厂有帮助，欢迎通过以下方式支持持续维护：
 
-- [爱发电赞助](https://www.ifdian.net/a/Ct_yx?utm_source=copylink&utm_medium=link)
+- [爱发电赞助](https://ifdian.net/a/Ct_yx)
 - [Buy Me a Coffee](https://buymeacoffee.com/ctyx)
 
 [← 返回项目 README](../../README.md) · [在线展示站](https://ct-yx.github.io/shapez-mods/)

@@ -22,4 +22,11 @@
 - 性能压测：`factory-stress-lab.js`；要快速搭建测试工厂时再加入 `sandbox.js`。
 - 高分辨率归档：`factory-area-screenshot.js`；选区截图不加外围留白，整地图截图默认添加 10 格留白。
 
+## 支持项目
+
+如果这些 Mod 对你的工厂有帮助，欢迎通过以下方式支持持续维护：
+
+- [爱发电赞助](https://www.ifdian.net/a/Ct_yx?utm_source=copylink&utm_medium=link)
+- [Buy Me a Coffee](https://buymeacoffee.com/ctyx)
+
 [← 返回项目 README](../../README.md) · [在线展示站](https://ct-yx.github.io/shapez-mods/)

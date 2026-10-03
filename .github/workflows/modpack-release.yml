@@ -40,10 +40,13 @@ jobs:
 
           - `structured-mod-settings.js` — 统一的 MODS 设置界面与持久化 API
           - `belt_speed_10x.js` — 传送带、地下传送带和平衡器速度控制
+          - `underground-belt-expansion.js` — 三级、四级地下传送带与距离设置
+          - `belt-optimization.js` — 传送带动画与低缩放物品视觉优化
           - `balancer-variants.js` — 4 / 5 / 8 / 10 / 16 路平衡器变形体
           - `key-reform.js` — T/R 组合键与滚轮快捷建造
-          - `zoomout-before-mapmode.js` — 地图总览缩放和低缩放传送带简化渲染
+          - `zoomout-before-mapmode.js` — 地图总览缩放
           - `factory-stress-lab.js` — 模拟倍率控制、压力测试与报告导出
+          - `factory-area-screenshot.js` — 普通镜头工厂范围与地图区域截图
           - `auto-tunnels@1.0.4.js` — 方向锁定铺带自动地下通道
           - `extractor_chain.js` — 链式采矿机拖动连续放置
           - `sandbox.js` — 全解锁、免费蓝图的测试沙盒

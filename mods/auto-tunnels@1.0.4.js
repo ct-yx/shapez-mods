@@ -113,8 +113,8 @@
         var BELT_ID = "belt";
         var BELT_LAYER = "regular";
 
-        // Read the live range table supplied by the game. Belt Speed Control
-        // extends this array to tiers 3 and 4 and updates it when its range
+        // Read the live range table supplied by the game. Underground Belt
+        // Expansion extends this array to tiers 3 and 4 and updates it when its range
         // sliders change, so this Mod deliberately never caches the values.
         function getTunnelTierForVariant(variant) {
             if (variant === defaultBuildingVariant) return 0;

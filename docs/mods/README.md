@@ -4,11 +4,13 @@
 
 | 分类 | Mod | 当前版本 | 页面 |
 | --- | --- | ---: | --- |
-| 基础设施 | Structured Mod Settings UI | 1.0.1 | [说明](structured-mod-settings.md) |
-| 物流 | Belt Speed Control | 1.4.0 | [说明](belt-speed-control.md) |
+| 基础设施 | Structured Mod Settings UI | 1.1.0 | [说明](structured-mod-settings.md) |
+| 物流 | Belt Speed Control | 1.5.0 | [说明](belt-speed-control.md) |
+| 性能 / 物流 | Belt Optimization | 1.0.0 | [说明](belt-optimization.md) |
+| 物流 | Underground Belt Expansion | 1.0.0 | [说明](underground-belt-expansion.md) |
 | 物流 | Balancer Variants | 1.0.4 | [说明](balancer-variants.md) |
 | 建造 | Key Reform | 1.1.8 | [说明](key-reform.md) |
-| 视图 | Zoom out before Mapmode | 1.5.1 | [说明](zoomout-before-mapmode.md) |
+| 视图 | Zoom out before Mapmode | 1.6.0 | [说明](zoomout-before-mapmode.md) |
 | 性能 | Factory Stress Lab | 2.4.0 | [说明](factory-stress-lab.md) |
 | 视图 / 工具 | Factory Area Snapshot | 2.0.0 | [说明](factory-area-snapshot.md) |
 | 建造 | Auto Tunnels | 1.1.0 | [说明](auto-tunnels.md) |
@@ -18,7 +20,8 @@
 ## 组合建议
 
 - 需要设置页面的 Mod：同时启用 `structured-mod-settings.js`。
-- 高吞吐物流：`belt_speed_10x.js` + `balancer-variants.js` + `auto-tunnels@1.0.4.js`。
+- 视觉优化：启用 `belt-optimization.js`，然后在「设置 → 游戏模组（MODS）→ 传送带优化」中分别控制总开关、动画冻结和低缩放物品简化；地图总览缩放可单独启用 `zoomout-before-mapmode.js`。
+- 高吞吐物流：`belt_speed_10x.js` + `underground-belt-expansion.js` + `belt-optimization.js` + `balancer-variants.js` + `auto-tunnels@1.0.4.js`。
 - 性能压测：`factory-stress-lab.js`；要快速搭建测试工厂时再加入 `sandbox.js`。
 - 高分辨率归档：`factory-area-screenshot.js`；选区截图不加外围留白，整地图截图默认添加 10 格留白。
 

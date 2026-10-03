@@ -4,7 +4,7 @@ const METADATA = {
     author: "ct-yx & Codex",
     name: "Structured Mod Settings UI",
     // Keep the persisted filename stable while the UI implementation evolves.
-    version: "1.0.1",
+    version: "1.1.0",
     id: "structured-mod-settings-ui",
     description: "Adds a native Game Mods (MODS) settings category for other mods.",
     minimumGameVersion: ">=1.5.0",
@@ -18,7 +18,7 @@ const METADATA = {
 };
 
 const API_NAME = "ShapezStructuredSettings";
-const API_VERSION = "1.1.1";
+const API_VERSION = "1.2.0";
 const SETTINGS_CATEGORY_ID = "structured-mod-settings";
 
 class StructuredSettingsRegistry {
@@ -193,6 +193,7 @@ class StructuredSettingsRegistry {
             get: fieldId => this.get(normalized.id, fieldId),
             set: (fieldId, value) => this.set(normalized.id, fieldId, value),
             getAll: () => this.getAll(normalized.id),
+            copyStoredValues: (fromModId, fieldIds) => this.copyStoredValues(fromModId, normalized.id, fieldIds),
             // Kept as a compatibility alias. The UI now lives in the native
             // SettingsState, so open navigates to its MODS category.
             open: () => this.openNativeSettings(),
@@ -249,10 +250,33 @@ class StructuredSettingsRegistry {
 
     getAll(modId) {
         const definition = this.getDefinition(modId);
-        if (!definition) return {};
+        if (!definition) {
+            // Keep values from a previous definition readable so a split Mod
+            // can migrate its settings before registering the new panel.
+            const values = this.mod.settings.values[String(modId)];
+            return values && typeof values === "object" ? this.clone(values) : {};
+        }
         const result = {};
         for (const field of definition.fields) result[field.id] = this.get(definition.id, field.id);
         return result;
+    }
+
+    copyStoredValues(fromModId, toModId, fieldIds) {
+        const source = this.mod.settings.values[String(fromModId)];
+        if (!source || typeof source !== "object") return false;
+        const target = this.getValuesBucket(toModId);
+        const fields = Array.isArray(fieldIds) ? fieldIds : Object.keys(source);
+        let changed = false;
+        for (const fieldId of fields) {
+            if (!Object.prototype.hasOwnProperty.call(source, fieldId)
+                || Object.prototype.hasOwnProperty.call(target, fieldId)) {
+                continue;
+            }
+            target[fieldId] = this.clone(source[fieldId]);
+            changed = true;
+        }
+        if (changed) this.mod.saveSettings();
+        return changed;
     }
 
     set(modId, fieldId, rawValue, options = {}) {
@@ -318,6 +342,7 @@ class StructuredSettingsRegistry {
             get: (modId, fieldId) => this.get(modId, fieldId),
             set: (modId, fieldId, value) => this.set(modId, fieldId, value),
             getAll: modId => this.getAll(modId),
+            copyStoredValues: (fromModId, toModId, fieldIds) => this.copyStoredValues(fromModId, toModId, fieldIds),
             reset: modId => this.reset(modId),
             open: () => this.openNativeSettings(),
             close: () => this.closeNativeSettings(),

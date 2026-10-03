@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="独立控制传送带动画冻结和低缩放物品简化，不改变物流模拟。">
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+    <title>Belt Optimization · shapez.io Mods</title>
+    <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+    <header class="site-header"><nav class="nav"><a class="brand" href="../index.html"><span class="brand-mark">◇</span>shapez.io Mods</a><div class="nav-links"><a href="../index.html#mods">全部 Mod</a><a href="https://github.com/ct-yx/shapez-mods/blob/main/mods/belt-optimization.js">源码 ↗</a></div></nav></header>
+    <main class="shell">
+        <section class="page-hero"><div class="breadcrumb"><a href="../index.html">首页</a><span>/</span><span>性能 / 物流</span></div><span class="tag purple">性能 / 物流</span><h1>Belt Optimization</h1><p class="lead">独立控制传送带动画冻结和低缩放物品简化，不改变物流模拟。</p><div class="meta-row"><span class="meta">版本 1.0.0</span><span class="meta">文件 <code>belt-optimization.js</code></span><span class="meta">shapez.io 1.x</span></div></section>
+        <section class="page-layout"><article class="prose"><h2>用途</h2><p>这个 Mod 只改变传送带的绘制方式，不改变传送带速度、物品移动、地下带连接或存档数据。可以单独启用，也可以和 Belt Speed Control 组合。</p><h2>核心功能</h2><ul><li>传送带箭头和底纹在超过吞吐阈值后固定到静态帧。</li><li>低缩放时每条传送带路径只绘制首尾物品。</li><li>低缩放时使用无动态箭头的静态传送带底图。</li><li>物品逻辑、传送带吞吐和机器处理继续运行。</li><li>所有开关和阈值注册在 Structured Mod Settings 的「游戏模组（MODS）」页面。</li></ul><h2>默认设置</h2><table><thead><tr><th>设置</th><th>默认值</th></tr></thead><tbody><tr><td>启用传送带视觉优化</td><td>开启</td></tr><tr><td>动画冻结吞吐阈值</td><td>15 items/s</td></tr><tr><td>低缩放物品简化</td><td>开启</td></tr><tr><td>简化渲染缩放阈值</td><td>0.5×</td></tr></tbody></table><h2>使用方法</h2><ul><li>同时启用 <code>structured-mod-settings.js</code>，打开「设置 → 游戏模组（MODS）→ 传送带优化」。</li><li>总开关控制两类视觉优化；动画阈值设为 0 可关闭动画冻结。</li><li>低缩放物品简化可以单独关闭，并可调整触发缩放阈值。</li></ul><h2>兼容性与注意事项</h2><div class="notice">与 Belt Speed Control 组合时，物流倍率和视觉优化分别生效。Zoom out before Mapmode 只负责地图总览缩放。</div></article><aside class="aside"><h3>获取方式</h3><p>下载整合包后，只需将本 Mod 对应的 JS 文件复制到游戏 Mod 目录。</p><a class="button primary" data-modpack-download href="https://github.com/ct-yx/shapez-mods/releases/tag/modpack-latest"><span data-modpack-label>正在获取最新整合包…</span></a><p class="download-status" data-modpack-status aria-live="polite">正在通过 GitHub API 查询最新发布包…</p><a class="button" href="https://github.com/ct-yx/shapez-mods/blob/main/mods/belt-optimization.js">查看源码 ↗</a><a class="button" href="https://ct-yx.github.io/shapez-mods/">返回展示首页</a></aside></section>
+    </main>
+    <footer class="site-footer"><div class="shell"><span>shapez.io Mods Collection</span><a href="https://ifdian.net/a/Ct_yx" target="_blank" rel="noreferrer">爱发电赞助 ↗</a><a href="https://buymeacoffee.com/ctyx" target="_blank" rel="noreferrer">Buy Me a Coffee ↗</a><a href="https://github.com/ct-yx/shapez-mods">GitHub Repository ↗</a></div></footer>
+    <script src="../assets/download-latest.js" defer></script>
+</body>
+</html>

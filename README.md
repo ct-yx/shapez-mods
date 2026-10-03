@@ -16,11 +16,13 @@
 
 | 分类 | Mod | 版本 | 一句话介绍 | 独立介绍 |
 | --- | --- | --- | --- | --- |
-| 基础设施 | `structured-mod-settings.js` | 1.0.1 | 原生 MODS 分类、结构化字段、持久化、语言切换和重载按钮。 | [查看](docs/mods/structured-mod-settings.md) |
-| 物流 | `belt_speed_10x.js` | 1.4.0 | 传送带 1–50× 调速；地下传送带四级距离独立设置，并同步平衡器与读取器。 | [查看](docs/mods/belt-speed-control.md) |
+| 基础设施 | `structured-mod-settings.js` | 1.1.0 | 原生 MODS 分类、结构化字段、持久化、语言切换、重载按钮和拆分设置迁移。 | [查看](docs/mods/structured-mod-settings.md) |
+| 物流 | `belt_speed_10x.js` | 1.5.0 | 传送带 1–50× 调速，并同步原版二路平衡器与读取器吞吐。 | [查看](docs/mods/belt-speed-control.md) |
+| 物流 | `underground-belt-expansion.js` | 1.0.0 | 增加三级、四级地下传送带，并独立配置四级连接距离。 | [查看](docs/mods/underground-belt-expansion.md) |
+| 性能 / 物流 | `belt-optimization.js` | 1.0.0 | 独立控制传送带动画冻结和低缩放物品简化，不改变物流逻辑。 | [查看](docs/mods/belt-optimization.md) |
 | 物流 | `balancer-variants.js` | 1.0.4 | 原版平衡器新增 4 / 5 / 8 / 10 / 16 路变形体，修正多路贴图比例。 | [查看](docs/mods/balancer-variants.md) |
 | 建造 | `key-reform.js` | 1.1.8 | 使用 T/R + 数字键或标准化滚轮快速切换变形体和朝向。 | [查看](docs/mods/key-reform.md) |
-| 视图 | `zoomout-before-mapmode.js` | 1.5.1 | 扩大地图总览前缩放范围，并在低缩放时合并/简化传送带物品。 | [查看](docs/mods/zoomout-before-mapmode.md) |
+| 视图 | `zoomout-before-mapmode.js` | 1.6.0 | 扩大进入地图总览前的缩放范围。 | [查看](docs/mods/zoomout-before-mapmode.md) |
 | 性能 | `factory-stress-lab.js` | 2.4.0 | 无上限倍率、40 FPS 自适应 Benchmark、10 分钟普通曲线与三种报告。 | [查看](docs/mods/factory-stress-lab.md) |
 | 视图 / 工具 | `factory-area-screenshot.js` | 2.0.0 | 低/中/高质量预设、清晰像素采样、普通镜头分块和流式高分辨率 PNG。 | [查看](docs/mods/factory-area-snapshot.md) |
 | 建造 | `auto-tunnels@1.0.4.js` | 1.1.0 | 方向锁定铺带时按实时长度选地下传送带跨越连续障碍，兼容多路平衡器。 | [查看](docs/mods/auto-tunnels.md) |
@@ -41,9 +43,11 @@
 
 | Mod | 默认行为 |
 | --- | --- |
-| Belt Speed Control | 每级 10×；倍率范围 1–50×。一级至四级地下传送带范围默认保持原版，分别可调到原版的 1–10×；实际吞吐超过 15 items/s 时默认冻结动画。 |
+| Belt Speed Control | 每级 10×；倍率范围 1–50×。只调整普通/地下传送带速度、原版二路平衡器和读取器吞吐。 |
+| Underground Belt Expansion | 增加三级、四级地下传送带；四个等级的距离可分别设置为原版的 1–10×。 |
+| Belt Optimization | 默认启用；实际吞吐超过 15 items/s 时冻结传送带动画，镜头缩放 ≤ 0.5× 时简化传送带物品。 |
 | Key Reform | `T + 数字键` 选变形体，`R + 1/2/3/4` 设上/右/下/左方向；按住 `T/R` 滚轮可循环切换。 |
-| Zoom out before Mapmode | 进入地图总览前可缩小到原版范围的 2×；实际镜头缩放 ≤ 0.5× 时默认只显示传送带首尾物品。 |
+| Zoom out before Mapmode | 进入地图总览前可缩小到原版范围的 2×。 |
 | Factory Stress Lab | 手动倍率可输入任意正数；`Shift + T` 切换 Turbo 100×，`[` / `]` 以 1× 调整。 Benchmark 从 200× 起步，目标 38–42 FPS，支持 120 s / 900 s，结束回到 3×。 |
 | Factory Area Snapshot | 选区质量默认 16 / 48 / 256 MP，选区上限分别为 48×48 / 128×128 / 1024×1024 格；整地图默认高质量并添加 10 格留白。 |
 
@@ -52,7 +56,7 @@
 | 目标 | 推荐启用 |
 | --- | --- |
 | 日常建造 | `balancer-variants.js` + `key-reform.js` |
-| 高吞吐物流测试 | `belt_speed_10x.js` + `balancer-variants.js` + `auto-tunnels@1.0.4.js` |
+| 高吞吐物流测试 | `belt_speed_10x.js` + `underground-belt-expansion.js` + `belt-optimization.js` + `balancer-variants.js` + `auto-tunnels@1.0.4.js` |
 | 大地图规划 | `structured-mod-settings.js` + `zoomout-before-mapmode.js` |
 | 工厂布局归档 | `factory-area-screenshot.js`；可导出机器范围或地图总览框选区域，大型图片先以 16–32 MP 试导出 |
 | 工厂性能压测 | `factory-stress-lab.js`；搭建测试布局时可额外启用 `sandbox.js` |
@@ -67,7 +71,7 @@
   </tr>
   <tr>
     <td><img src="docs/assets/screenshots/balancer-variant-selector.png" alt="平衡器变形体选择"><br><sub>4x 至 16x 的平衡器变形体</sub></td>
-    <td><img src="docs/assets/screenshots/zoomout-settings.png" alt="地图总览缩放设置"><br><sub>地图总览缩放和低缩放渲染配置</sub></td>
+    <td><img src="docs/assets/screenshots/zoomout-settings.png" alt="地图总览缩放设置"><br><sub>地图总览缩放配置</sub></td>
   </tr>
 </table>
 
@@ -79,7 +83,7 @@
 - **Balancer Variants** 已包含多路平衡器，避免再与旧的独立 4-way / 8-way 平衡器 Mod 同时启用。
 - **Sandbox** 会让所有奖励解锁、蓝图免费；建议使用独立测试存档，避免干扰正常进度。
 - **Auto Tunnels** 和 **Chainable Extractors** 会扩展游戏建造器逻辑；若使用其他同类建造 Mod，建议先在测试存档验证组合效果。
-- 低缩放时的传送带简化渲染仅影响视觉表现，不改变物流模拟。
+- `Belt Optimization` 的传送带动画冻结和低缩放物品简化仅影响视觉表现，不改变物流模拟。
 - **Factory Area Snapshot** 支持已放置机器范围和地图总览框选两种来源：选区不添加外围留白，整地图会按普通层机器边界添加留白；默认在截图期间暂停模拟（可关闭），结束后恢复原速度与图层。
 - **Factory Stress Lab** 的普通性能详情在收起时停止并清空曲线，Benchmark 样本独立保留；机器压力指数是比较指标，不是硬件功耗。
 

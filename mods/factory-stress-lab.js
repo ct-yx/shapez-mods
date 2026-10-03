@@ -958,7 +958,15 @@ class Mod extends shapez.Mod {
         const afterSet = (benchmark.lastSetAt || benchmark.startedAt) + 700;
         // The controller samples once per second. A short recent window makes
         // the feedback react to the current target instead of stale readings.
-        return benchmark.samples.filter(sample => sample.time >= afterSet).slice(-6);
+        const samples = benchmark.samples;
+        const window = [];
+        for (let i = samples.length - 1; i >= 0; i--) {
+            const sample = samples[i];
+            if (sample.time < afterSet) break;
+            window.push(sample);
+            if (window.length === 6) break;
+        }
+        return window.reverse();
     }
 
     getWindowFpsStats(samples) {
@@ -984,13 +992,14 @@ class Mod extends shapez.Mod {
             return;
         }
 
+        if (metrics.now < benchmark.nextAdjustmentAt) return;
+
         const currentTarget = Math.max(this.state.minSpeed, this.state.targetSpeed);
         const window = this.getBenchmarkWindow(benchmark);
         const fps = this.getWindowFpsStats(window);
         const elapsedAtTarget = metrics.now - (benchmark.lastSetAt || benchmark.startedAt);
         const minimumSamples = 2;
 
-        if (metrics.now < benchmark.nextAdjustmentAt) return;
         if (metrics.now < benchmark.warmupUntil) {
             this.setBenchmarkStatus("calibrating");
             benchmark.nextAdjustmentAt = benchmark.warmupUntil;
@@ -1111,6 +1120,7 @@ class Mod extends shapez.Mod {
         if (isBenchmark) {
             this.benchmark.samples.push(sample);
             if (this.benchmark.samples.length > 1200) this.benchmark.samples.shift();
+            this.benchmark.statsCache = null;
             this.benchmark.peakSpeed = Math.max(this.benchmark.peakSpeed, metrics.speed);
             const fps = Number.isFinite(metrics.renderFps) ? metrics.renderFps : 0;
             this.benchmark.fpsEma = this.benchmark.fpsEma == null ? fps : this.benchmark.fpsEma * 0.80 + fps * 0.20;
@@ -1130,6 +1140,15 @@ class Mod extends shapez.Mod {
     getBenchmarkStats(samples = []) {
         if (!samples.length) return { averageSpeed: 0, averageFps: 0, averageTickMs: 0, stability: 0, targetHold: 0 };
         const target = this.benchmark.targetFps || 40;
+        const cache = this.benchmark.statsCache;
+        if (
+            samples === this.benchmark.samples &&
+            cache &&
+            cache.length === samples.length &&
+            cache.lastSample === samples[samples.length - 1] &&
+            cache.target === target
+        ) return cache.stats;
+
         let speed = 0, fps = 0, tick = 0, tickCount = 0, stability = 0, targetHold = 0;
         for (const sample of samples) {
             speed += Number(sample.speed) || 0;
@@ -1138,13 +1157,22 @@ class Mod extends shapez.Mod {
             stability += Math.max(0, 1 - Math.abs((Number(sample.fps) || 0) - target) / target);
             if ((Number(sample.fps) || 0) >= target - 2 && (Number(sample.fps) || 0) <= target + 2) targetHold++;
         }
-        return {
+        const stats = {
             averageSpeed: speed / samples.length,
             averageFps: fps / samples.length,
             averageTickMs: tickCount ? tick / tickCount : 0,
             stability: stability / samples.length,
             targetHold: targetHold / samples.length
         };
+        if (samples === this.benchmark.samples) {
+            this.benchmark.statsCache = {
+                length: samples.length,
+                lastSample: samples[samples.length - 1],
+                target,
+                stats
+            };
+        }
+        return stats;
     }
 
     getMachineWeight(components) {
